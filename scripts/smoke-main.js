@@ -31,7 +31,9 @@ async function shot(win, name) {
 }
 
 async function run(win) {
-  await wait(5000);
+  await wait(1400);
+  await shot(win, '0-boot');
+  await wait(3600);
   await shot(win, '1-jogos');
   await key(win, 'Down'); await key(win, 'Right'); await key(win, 'Right');
   await shot(win, '2-jogos-nav');

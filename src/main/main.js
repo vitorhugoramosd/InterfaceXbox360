@@ -18,7 +18,11 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-const ICON = path.join(__dirname, '..', '..', 'assets', 'icon.ico');
+// Ícone pessoal (assets/local, fora do git) tem prioridade sobre a orbe padrão.
+const ASSETS = path.join(__dirname, '..', '..', 'assets');
+const ICON = require('fs').existsSync(path.join(ASSETS, 'local', 'icon.ico'))
+  ? path.join(ASSETS, 'local', 'icon.ico')
+  : path.join(ASSETS, 'icon.ico');
 
 function applyAutostart(enabled) {
   if (!app.isPackaged) {

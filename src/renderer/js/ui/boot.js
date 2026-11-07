@@ -7,13 +7,56 @@ const DURATION = 2050;
 let finish = null;
 export let booting = true;
 
+// Logo pessoal opcional (gerada por scripts/make-logo.js; fica fora do git).
+const LOGO = '../../assets/local/logo.png';
+function loadLogo() {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = LOGO;
+    setTimeout(() => resolve(false), 500);
+  });
+}
+
 export function runBoot({ theme = 'blades' } = {}) {
   const boot = document.getElementById('boot');
-  const inner = boot.querySelector('.boot-inner');
   // Troca de visual recarrega a página: nesse caso não repete o boot.
   let skip = false;
   try { skip = sessionStorage.getItem('bladedash.skipBoot') === '1'; sessionStorage.removeItem('bladedash.skipBoot'); } catch { /* ok */ }
-  if (skip || theme === 'metro') return runQuick(boot, skip);
+  if (skip) return runQuick(boot, true);
+  return loadLogo().then((hasLogo) => {
+    if (hasLogo) return runLogo(boot, theme);
+    return theme === 'metro' ? runQuick(boot, false) : runBlades(boot);
+  });
+}
+
+/** Boot com a logo: emblema surge no centro, brilho passa por cima, some (~2,4s). */
+function runLogo(boot, theme) {
+  boot.classList.add('logo-boot', theme === 'metro' ? 'logo-light' : 'logo-dark');
+  const inner = boot.querySelector('.boot-inner');
+  inner.innerHTML = `<div class="lb-wrap"><div class="lb-glow"></div>
+    <img class="lb-logo" src="${LOGO}" alt=""><div class="lb-shine"></div></div>`;
+  inner.append(h('div', { class: 'b-skip', text: 'Pressione qualquer botão para pular' }));
+  sfx.boot();
+  return new Promise((resolve) => {
+    let done = false;
+    finish = (fast) => {
+      if (done) return;
+      done = true;
+      booting = false;
+      boot.classList.toggle('fast', !!fast);
+      boot.classList.add('out');
+      document.body.classList.add('ready');
+      setTimeout(() => boot.remove(), 600);
+      resolve();
+    };
+    setTimeout(() => finish(false), 2400);
+  });
+}
+
+function runBlades(boot) {
+  const inner = boot.querySelector('.boot-inner');
   inner.innerHTML = `
     <div class="boot-orb">
       <div class="b-glow"></div>
