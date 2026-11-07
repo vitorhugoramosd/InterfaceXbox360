@@ -18,16 +18,20 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
+const ICON = path.join(__dirname, '..', '..', 'assets', 'icon.ico');
+
 function applyAutostart(enabled) {
   if (!app.isPackaged) {
     // Em modo dev, registra electron.exe + caminho do app.
+    // O Electron junta path + args sem aspas: com espaços no caminho (ex.: "Área de Trabalho") o Windows quebraria o comando.
     app.setLoginItemSettings({
       openAtLogin: !!enabled,
-      path: process.execPath,
-      args: [path.resolve(__dirname, '..', '..')],
+      name: 'Blade Dash',
+      path: `"${process.execPath}"`,
+      args: [`"${path.resolve(__dirname, '..', '..')}"`],
     });
   } else {
-    app.setLoginItemSettings({ openAtLogin: !!enabled });
+    app.setLoginItemSettings({ openAtLogin: !!enabled, name: 'Blade Dash' });
   }
 }
 
@@ -42,6 +46,7 @@ function createWindow() {
     autoHideMenuBar: true,
     backgroundColor: '#0b1a06',
     title: 'Blade Dash',
+    icon: ICON,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
