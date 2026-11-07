@@ -1,0 +1,14 @@
+{
+  "name": "blade-dash",
+  "version": "1.0.0",
+  "description": "Launcher de jogos estilo dashboard de console clássico",
+  "main": "src/main/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "scan": "node scripts/scan-test.js"
+  },
+  "devDependencies": {
+    "electron": "33.2.1"
+  }
+}
