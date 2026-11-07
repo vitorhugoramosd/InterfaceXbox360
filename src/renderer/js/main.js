@@ -1,6 +1,6 @@
 // Blade Dash — ponto de entrada do renderer.
 import { dash, isMock } from './api.js';
-import { state, emit, setGames, setRunning, refreshGames, getGame } from './store.js';
+import { state, emit, on, setGames, setRunning, refreshGames, getGame } from './store.js';
 import { onAction, onPad, mouseActive } from './input.js';
 import { sfx, setSoundEnabled, unlockAudio } from './sound.js';
 import { app } from './app.js';
@@ -13,7 +13,9 @@ import { topModal } from './ui/modal.js';
 import { renderHints, setHintMode } from './ui/hints.js';
 import { toast } from './ui/toast.js';
 import { runBoot, skipBoot, booting } from './ui/boot.js';
-import { toggleGuide, rescan } from './ui/actions.js';
+import { toggleGuide, rescan, currentTheme } from './ui/actions.js';
+import { MetroShell } from './metro/shell.js';
+import { createInicio, createJogosPivot, createRecentesPivot, createPlataformas, createConfig } from './metro/pivots.js';
 import { fillAvatar, timeFmt, dateFmt } from './ui/util.js';
 
 /* ------------------------------------------------ escala do palco 1920x1080 */
@@ -37,7 +39,9 @@ async function start() {
   } catch (e) { console.error(e); }
   setSoundEnabled(state.settings.sounds !== false);
 
-  const bootDone = runBoot();
+  const theme = currentTheme();
+  buildShell(theme);
+  const bootDone = runBoot({ theme });
 
   // carrega perfil e jogos em paralelo à animação
   const loadProfile = dash.getProfile().then((p) => { if (p && p.name) state.profile = p; }).catch(console.error);
@@ -54,18 +58,41 @@ async function start() {
   if (isMock) setTimeout(() => toast('Modo demonstração: dados de exemplo (fora do Electron)', { ms: 4200 }), 600);
 }
 
-/* ------------------------------------------------------------ blades */
-const jogos = createJogos();
-const screens = [jogos, createRecentes(), createSistema(), createPerfil()];
-const blades = new BladeStack(document.getElementById('blades'), screens, () => refreshHints());
+/* ------------------------------------------------- shell por tema */
+// "shell" = pilha de blades (2005) ou pivôs Metro (2011). Mesma interface:
+// current, go(i), next(), prev(), indexOf(key); cada tela tem handle/hints/pointer/bladeEl.
+let shell = null;
 
-app.goBlade = (key) => { const i = blades.indexOf(key); if (i >= 0) blades.go(i); refreshHints(); };
-app.focusGame = (id) => { blades.go(0, { silent: true }); jogos.focusGame(id); refreshHints(); };
+function buildShell(theme) {
+  document.body.classList.add('theme-' + theme);
+  if (theme === 'metro') {
+    document.getElementById('blades').remove();
+    const root = document.getElementById('metro');
+    const jogosPivot = createJogosPivot();
+    const pivots = [];
+    const nav = { go: (key) => { const i = pivots.findIndex((p) => p.key === key); if (i >= 0) shell.go(i); refreshHints(); } };
+    pivots.push(createInicio(nav), jogosPivot, createRecentesPivot(), createPlataformas(), createConfig());
+    shell = new MetroShell(root, pivots, () => refreshHints());
+    app.goHome = () => nav.go('inicio');
+    app.goSettings = () => nav.go('config');
+    app.focusGame = (id) => { nav.go('jogos'); jogosPivot.focusGame(id); refreshHints(); };
+  } else {
+    document.getElementById('metro').remove();
+    const jogos = createJogos();
+    const screens = [jogos, createRecentes(), createSistema(), createPerfil()];
+    shell = new BladeStack(document.getElementById('blades'), screens, () => refreshHints());
+    const goKey = (key) => { const i = shell.indexOf(key); if (i >= 0) shell.go(i); refreshHints(); };
+    app.goHome = () => goKey('jogos');
+    app.goSettings = () => goKey('sistema');
+    app.focusGame = (id) => { shell.go(0, { silent: true }); jogos.focusGame(id); refreshHints(); };
+  }
+}
 app.refreshHints = () => refreshHints();
 
 function refreshHints() {
   const top = topModal();
-  renderHints(top ? top.hints() : blades.current.hints());
+  if (!shell) return;
+  renderHints(top ? top.hints() : shell.current.hints());
 }
 
 /* ------------------------------------------------------------ entrada */
@@ -73,6 +100,7 @@ onAction((action, meta) => {
   unlockAudio();
   setHintMode(meta.source === 'pad' ? 'pad' : 'kb');
   if (booting) { skipBoot(); return; }
+  if (!shell) return;
 
   const top = topModal();
   if (top) {
@@ -82,13 +110,13 @@ onAction((action, meta) => {
     return;
   }
   if (action === 'guide') { toggleGuide(); refreshHints(); return; }
-  if (action === 'lb') { blades.prev(); refreshHints(); return; }
-  if (action === 'rb') { blades.next(); refreshHints(); return; }
+  if (action === 'lb') { shell.prev(); refreshHints(); return; }
+  if (action === 'rb') { shell.next(); refreshHints(); return; }
 
-  const handled = blades.current.handle(action, meta);
+  const handled = shell.current.handle(action, meta);
   if (!handled) {
-    if (action === 'left' && !meta.repeat) blades.prev();
-    else if (action === 'right' && !meta.repeat) blades.next();
+    if (action === 'left' && !meta.repeat) shell.prev();
+    else if (action === 'right' && !meta.repeat) shell.next();
     else if (action === 'b' && meta.source === 'key' && meta.key === 'Escape') toggleGuide();
   }
   refreshHints();
@@ -98,9 +126,10 @@ onAction((action, meta) => {
 function ownerFor(target) {
   const top = topModal();
   if (top) return top.el.contains(target) ? top : null;
-  const blade = target.closest('.blade');
-  if (!blade) return null;
-  return blades.current.bladeEl === blade ? blades.current : null;
+  if (!shell) return null;
+  const scr = target.closest('[data-screen]');
+  if (!scr) return null;
+  return shell.current.bladeEl === scr ? shell.current : null;
 }
 document.addEventListener('mouseover', (e) => {
   if (booting || !mouseActive()) return;
@@ -111,8 +140,15 @@ document.addEventListener('click', (e) => {
   unlockAudio();
   if (booting) { skipBoot(); return; }
   setHintMode('kb');
+  if (!shell) return;
   const spine = e.target.closest('[data-nav="spine"]');
-  if (spine && !topModal()) { blades.go(+spine.dataset.i); refreshHints(); return; }
+  if (spine && !topModal()) { shell.go(+spine.dataset.i); refreshHints(); return; }
+  // clique num pivô vizinho que está "espiando" na borda: vai para ele
+  const peek = !topModal() && e.target.closest('[data-screen]');
+  if (peek && peek !== shell.current.bladeEl) {
+    const i = shell.screens.findIndex((p) => p.bladeEl === peek);
+    if (i >= 0) { shell.go(i); refreshHints(); return; }
+  }
   if (e.target.closest('#veil')) {
     const top = topModal();
     if (top && !top.blocking) top.handle('b', { source: 'mouse' });
@@ -125,10 +161,10 @@ document.addEventListener('click', (e) => {
 // botão direito = voltar
 document.addEventListener('contextmenu', (e) => {
   e.preventDefault();
-  if (booting) return;
+  if (booting || !shell) return;
   const top = topModal();
   if (top) top.handle('b', { source: 'mouse' });
-  else blades.current.handle('b', { source: 'mouse' });
+  else shell.current.handle('b', { source: 'mouse' });
   refreshHints();
 });
 
@@ -150,6 +186,9 @@ dash.onGameState && dash.onGameState(({ id, running } = {}) => {
   }
   renderRunning();
 });
+on('running', () => { renderRunning(); refreshHints(); });
+on('settings', () => refreshHints());
+on('games', () => { renderRunning(); refreshHints(); });
 
 function renderRunning() {
   const ind = document.getElementById('running-ind');

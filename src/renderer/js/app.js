@@ -1,6 +1,7 @@
 // Ganchos compartilhados preenchidos pelo main.js (evita imports circulares).
 export const app = {
-  goBlade: (_key) => {},
+  goHome: () => {},
+  goSettings: () => {},
   focusGame: (_id) => {},
   refreshHints: () => {},
 };

@@ -3,7 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_SETTINGS = { autostart: true, fullscreen: true, sounds: true, startView: 'games' };
+const DEFAULT_SETTINGS = { autostart: true, fullscreen: true, sounds: true, startView: 'games', theme: 'metro' };
+const THEMES = ['metro', 'blades'];
 
 function emptyData() {
   return {
@@ -89,6 +90,7 @@ class Store {
       if (!allowed.includes(k)) continue;
       const v = patch[k];
       if (k === 'startView') this.data.settings[k] = String(v || 'games');
+      else if (k === 'theme') this.data.settings[k] = THEMES.includes(v) ? v : 'metro';
       else this.data.settings[k] = !!v;
     }
     return this.getSettings();

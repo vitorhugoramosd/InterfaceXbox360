@@ -18,7 +18,7 @@ export class BladeStack {
       const spineL = h('div', { class: 'spine l', dataset: { nav: 'spine', i } }, h('span', { class: 'lbl', text: s.title }));
       const spineR = h('div', { class: 'spine r', dataset: { nav: 'spine', i } }, h('span', { class: 'lbl', text: s.title }));
       const body = h('div', { class: 'blade-body' }, s.el);
-      const el = h('section', { class: 'blade', dataset: { theme: s.theme, key: s.key }, style: { '--bw': this.width + 'px' } },
+      const el = h('section', { class: 'blade', dataset: { theme: s.theme, key: s.key, screen: s.key }, style: { '--bw': this.width + 'px' } },
         h('div', { class: 'blade-title', text: s.title }),
         s.sub || null,
         body, spineL, spineR);

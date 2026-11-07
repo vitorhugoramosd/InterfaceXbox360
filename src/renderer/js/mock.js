@@ -56,7 +56,7 @@ function seed() {
     G('9N', 'xbox', 'Pista Infinita', { lastPlayed: now - 21 * DAY, playtimeMinutes: 640 }),
     G('emu', 'custom', 'Emulador Retrô', { installDir: 'C:\\Emuladores' , playtimeMinutes: 95, lastPlayed: now - 9 * DAY }),
     G('1003', 'steam', 'Ecos do Abismo', { cover: coverArt('Ecos do Abismo', 260, 3), hero: heroArt(250), lastPlayed: now - 10 * MIN, playtimeMinutes: 89 }),
-    G('1004', 'steam', 'Fazenda Feliz', { cover: 'file:///C:/nao/existe/capa.jpg', playtimeMinutes: 15 }),
+    G('1004', 'steam', 'Fazenda Feliz', { cover: 'data:image/png;base64,AAAA' /* imagem inválida: testa o onerror */, playtimeMinutes: 15 }),
     G('def', 'epic', 'Operação Tempestade', { lastPlayed: now - 400 * DAY, playtimeMinutes: 60 }),
     G('1005', 'steam', 'Reino Esquecido: Edição Definitiva do Aniversário', {}),
     G('9Q', 'xbox', 'Voo Livre Simulador', { cover: coverArt('Voo Livre', 200, 1) }),
@@ -86,7 +86,7 @@ export function createMockDash() {
   const clone = () => games.map((g) => ({ ...g }));
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const original = new Map(games.map((g) => [g.id, g.name]));
-  let settings = { autostart: false, fullscreen: true, sounds: true, startView: 'jogos' };
+  let settings = { autostart: false, fullscreen: true, sounds: true, startView: 'jogos', theme: 'metro' };
   try { Object.assign(settings, JSON.parse(localStorage.getItem('bladedash.mock.settings') || '{}')); } catch { /* sem storage */ }
   let customN = 1;
 

@@ -7,9 +7,13 @@ const DURATION = 2050;
 let finish = null;
 export let booting = true;
 
-export function runBoot() {
+export function runBoot({ theme = 'blades' } = {}) {
   const boot = document.getElementById('boot');
   const inner = boot.querySelector('.boot-inner');
+  // Troca de visual recarrega a página: nesse caso não repete o boot.
+  let skip = false;
+  try { skip = sessionStorage.getItem('bladedash.skipBoot') === '1'; sessionStorage.removeItem('bladedash.skipBoot'); } catch { /* ok */ }
+  if (skip || theme === 'metro') return runQuick(boot, skip);
   inner.innerHTML = `
     <div class="boot-orb">
       <div class="b-glow"></div>
@@ -43,4 +47,24 @@ export function runBoot() {
     setTimeout(() => finish(false), DURATION);
   });
 }
+/** Boot curto (Metro): fundo cinza aparece e os pivôs deslizam da direita (~1s) */
+function runQuick(boot, instant) {
+  boot.classList.add('quick');
+  boot.querySelector('.boot-inner').replaceChildren();
+  if (!instant) sfx.open();
+  return new Promise((resolve) => {
+    let done = false;
+    finish = () => {
+      if (done) return;
+      done = true;
+      booting = false;
+      boot.classList.add('out', 'fast');
+      document.body.classList.add('ready');
+      setTimeout(() => boot.remove(), 400);
+      resolve();
+    };
+    setTimeout(finish, instant ? 0 : 450);
+  });
+}
+
 export function skipBoot() { if (finish) finish(true); }

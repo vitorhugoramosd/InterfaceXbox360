@@ -6,7 +6,8 @@ import { openMenu, openConfirm, openTextInput, pushModal, closeModal, closeAll, 
 import { toast } from './toast.js';
 import { sfx } from '../sound.js';
 import { dash, has } from '../api.js';
-import { state, patchGame, refreshGames, setGames, getGame, replaceGame, setLoading } from '../store.js';
+import { state, patchGame, refreshGames, setGames, getGame, replaceGame, setLoading, emit } from '../store.js';
+import { setSoundEnabled } from '../sound.js';
 import { app } from '../app.js';
 
 const MIN_SPLASH = 2600;
@@ -195,10 +196,54 @@ function openGuide() {
     sub: 'Guia · ' + timeFmt.format(new Date()),
     body,
     items: [
-      { label: 'Voltar ao Dashboard', icon: 'home', onSelect: () => app.goBlade('jogos') },
-      { label: 'Configurações', icon: 'gear', onSelect: () => app.goBlade('sistema') },
+      { label: 'Voltar ao Dashboard', icon: 'home', onSelect: () => app.goHome() },
+      { label: 'Configurações', icon: 'gear', onSelect: () => app.goSettings() },
       { label: 'Minimizar', icon: 'min', disabled: !has('minimize'), onSelect: () => dash.minimize() },
       { label: 'Desligar', icon: 'power', danger: true, onSelect: () => confirmShutdown() },
     ],
   });
+}
+
+/* ------------------------------------------------- Configurações */
+/** Alterna uma configuração booleana (autostart, fullscreen, sounds) */
+export async function toggleSetting(key) {
+  const v = !state.settings[key];
+  sfx.toggle();
+  if (key === 'sounds') setSoundEnabled(v);
+  state.settings = { ...state.settings, [key]: v };
+  emit('settings', state.settings);
+  try {
+    const s = await dash.setSettings({ [key]: v });
+    if (s && typeof s === 'object') state.settings = { ...state.settings, ...s };
+  } catch (e) {
+    console.error(e); sfx.error(); toast('Não foi possível salvar a configuração.', { type: 'error' });
+  }
+  setSoundEnabled(state.settings.sounds !== false);
+  emit('settings', state.settings);
+}
+
+export const THEMES = { metro: 'Metro (2011)', blades: 'Blades (2005)' };
+export const currentTheme = () => (state.settings.theme === 'blades' ? 'blades' : 'metro');
+
+/** Troca o visual do dashboard e recarrega o renderer (sem repetir o boot) */
+export async function switchTheme() {
+  const next = currentTheme() === 'metro' ? 'blades' : 'metro';
+  sfx.select();
+  try {
+    await dash.setSettings({ theme: next });
+  } catch (e) {
+    console.error(e); sfx.error(); toast('Não foi possível trocar o visual.', { type: 'error' }); return;
+  }
+  try { sessionStorage.setItem('bladedash.skipBoot', '1'); } catch { /* ok */ }
+  document.body.classList.add('theme-switching');
+  setTimeout(() => location.reload(), 280);
+}
+
+/** Reexibe um jogo oculto */
+export async function unhideGame(g) {
+  sfx.select();
+  try {
+    await patchGame(g.id, { hidden: false });
+    toast(`${g.name} voltou para a biblioteca`, { ms: 2600 });
+  } catch { sfx.error(); toast('Não foi possível reexibir.', { type: 'error' }); }
 }

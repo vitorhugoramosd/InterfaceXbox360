@@ -1,11 +1,11 @@
 // Blade "sistema": configurações, jogos ocultos, sair/minimizar/desligar.
 import { h, icon, sortAlpha, sourceLabel, fmtNum } from './util.js';
 import { createCover } from './cover.js';
-import { state, on, patchGame, emit } from '../store.js';
-import { sfx, setSoundEnabled } from '../sound.js';
+import { state, on } from '../store.js';
+import { sfx } from '../sound.js';
 import { dash, has, isMock } from '../api.js';
 import { toast } from './toast.js';
-import { confirmShutdown } from './actions.js';
+import { confirmShutdown, toggleSetting, switchTheme, unhideGame, THEMES, currentTheme } from './actions.js';
 
 const ITEMS = [
   { key: 'autostart', label: 'Iniciar com o Windows', icon: 'boot', type: 'toggle',
@@ -14,6 +14,8 @@ const ITEMS = [
     desc: 'Ocupa a tela inteira, sem bordas de janela. Recomendado para usar com controle na TV.' },
   { key: 'sounds', label: 'Sons da interface', icon: 'sound', type: 'toggle',
     desc: 'Sons ao navegar, trocar de blade e selecionar.' },
+  { key: 'theme', label: 'Visual do dashboard', icon: 'screen', type: 'theme',
+    desc: 'Escolha entre o visual Metro (2011), com abas e blocos, e o Blades (2005), com lâminas. A troca é aplicada na hora.' },
   { key: 'hidden', label: 'Jogos ocultos', icon: 'eye', type: 'list',
     desc: 'Jogos que você ocultou não aparecem na biblioteca. Selecione um para reexibi-lo.' },
   { sep: true },
@@ -34,7 +36,7 @@ export function createSistema() {
   let n = 0;
   for (const it of ITEMS) {
     if (it.sep) { menu.append(h('div', { class: 'sep' })); continue; }
-    const extra = it.type === 'toggle' ? h('span', { class: 'switch val' }) : it.type === 'list' ? h('span', { class: 'cnt' }) : null;
+    const extra = it.type === 'toggle' ? h('span', { class: 'switch val' }) : (it.type === 'list' || it.type === 'theme') ? h('span', { class: 'cnt' }) : null;
     const row = h('div', { class: 'mi', dataset: { nav: 'sys', i: n++ } }, icon(it.icon), h('span', { text: it.label }), extra);
     row._extra = extra;
     rows.push(row);
@@ -47,6 +49,7 @@ export function createSistema() {
     items.forEach((it, i) => {
       if (it.type === 'toggle') rows[i]._extra.classList.toggle('on', !!state.settings[it.key]);
       if (it.type === 'list') rows[i]._extra.textContent = fmtNum(hidden.length);
+      if (it.type === 'theme') rows[i]._extra.textContent = 'Blades';
     });
   }
   function paint() {
@@ -83,30 +86,23 @@ export function createSistema() {
         });
       }
     }
+    if (it.type === 'theme') {
+      const cur = currentTheme();
+      kids.push(h('div', { class: 'state' }, h('span', { text: 'Atual: ' + THEMES[cur] + ' — pressione A para usar ' + THEMES[cur === 'metro' ? 'blades' : 'metro'] })));
+    }
     if (it.key === 'shutdown') kids.push(h('div', { class: 'state warn', text: 'Salve seus jogos antes de desligar.' }));
     panel.replaceChildren(...kids, about);
   }
 
   async function toggle(it) {
-    const v = !state.settings[it.key];
-    sfx.toggle();
-    if (it.key === 'sounds') setSoundEnabled(v);
-    state.settings = { ...state.settings, [it.key]: v };
-    paintToggles(); renderPanel();
-    try {
-      const s = await dash.setSettings({ [it.key]: v });
-      if (s && typeof s === 'object') state.settings = { ...state.settings, ...s };
-      setSoundEnabled(state.settings.sounds !== false);
-      emit('settings', state.settings);
-    } catch (e) {
-      console.error(e); sfx.error(); toast('Não foi possível salvar a configuração.', { type: 'error' });
-    }
+    await toggleSetting(it.key);
     paintToggles(); renderPanel();
   }
 
   function activate() {
     const it = items[idx];
     if (it.type === 'toggle') return toggle(it);
+    if (it.type === 'theme') return switchTheme();
     if (it.type === 'list') {
       if (hidden.length) { zone = 'hidden'; hidIdx = Math.min(hidIdx, hidden.length - 1); sfx.move(); paint(); }
       else sfx.error();
@@ -118,13 +114,7 @@ export function createSistema() {
     if (it.key === 'shutdown') confirmShutdown();
   }
 
-  async function unhide(g) {
-    sfx.select();
-    try {
-      await patchGame(g.id, { hidden: false });
-      toast(`${g.name} voltou para a biblioteca`, { ms: 2600 });
-    } catch { sfx.error(); toast('Não foi possível reexibir.', { type: 'error' }); }
-  }
+  const unhide = (g) => unhideGame(g);
 
   function handle(a, meta) {
     if (zone === 'hidden') {
@@ -150,7 +140,7 @@ export function createSistema() {
   function hints() {
     if (zone === 'hidden') return [['a', 'Reexibir'], ['b', 'Voltar'], ['lbrb', 'Trocar blade'], ['guide', 'Guia']];
     const it = items[idx];
-    const lbl = it.type === 'toggle' ? 'Alternar' : it.type === 'list' ? 'Abrir' : 'Selecionar';
+    const lbl = it.type === 'toggle' ? 'Alternar' : it.type === 'list' ? 'Abrir' : it.type === 'theme' ? 'Trocar visual' : 'Selecionar';
     return [['a', lbl], ['lbrb', 'Trocar blade'], ['guide', 'Guia']];
   }
   function pointer(target, type) {

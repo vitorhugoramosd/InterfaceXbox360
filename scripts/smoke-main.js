@@ -35,10 +35,10 @@ async function run(win) {
   await shot(win, '1-jogos');
   await key(win, 'Down'); await key(win, 'Right'); await key(win, 'Right');
   await shot(win, '2-jogos-nav');
+  const names = process.env.SMOKE_SHOTS ? process.env.SMOKE_SHOTS.split(',') : ['4-recentes', '5-sistema', '6-perfil'];
+  for (const n of names) { await key(win, 'E'); await wait(900); await shot(win, n); }
   await key(win, 'X');
-  await shot(win, '3-opcoes');
-  await key(win, 'Escape');
-  for (const n of ['4-recentes', '5-sistema', '6-perfil']) { await key(win, 'E'); await wait(600); await shot(win, n); }
+  await shot(win, '9-opcoes');
   const n = await win.webContents.executeJavaScript('document.querySelectorAll("img").length');
   console.log('imgs no DOM:', n);
   console.log('erros no console:', errors.length ? errors : 'nenhum');
