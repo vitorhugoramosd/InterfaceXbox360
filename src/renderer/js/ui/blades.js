@@ -55,11 +55,12 @@ export class BladeStack {
     if (i < 0 || i >= this.screens.length || i === this.active) return false;
     const prev = this.current;
     prev.onLeave && prev.onLeave();
+    const dir = i > this.active ? 1 : -1;
     this.active = i;
     this.layout(true);
     const el = this.blades[i];
     el.classList.remove('sweep'); void el.offsetWidth; el.classList.add('sweep');
-    if (!silent) sfx.blade();
+    if (!silent) sfx.blade(dir);
     this.current.onEnter && this.current.onEnter();
     this.onChange && this.onChange(this.current);
     return true;

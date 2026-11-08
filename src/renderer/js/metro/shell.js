@@ -53,9 +53,10 @@ export class MetroShell {
 
   go(i, { silent = false } = {}) {
     if (i < 0 || i >= this.screens.length || i === this.active) return false;
+    const dir = i > this.active ? 1 : -1;
     this.active = i;
     this.layout(true);
-    if (!silent) sfx.blade();
+    if (!silent) sfx.blade(dir);
     this.onChange && this.onChange(this.current);
     return true;
   }
