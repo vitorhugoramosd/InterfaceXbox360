@@ -6,6 +6,8 @@ import { sfx } from '../sound.js';
 import { dash, has, isMock } from '../api.js';
 import { toast } from './toast.js';
 import { confirmShutdown, toggleSetting, switchTheme, unhideGame, THEMES, currentTheme } from './actions.js';
+import { caps, loadStorage } from '../extras.js';
+import { fmtBytes } from './util.js';
 
 const ITEMS = [
   { key: 'autostart', label: 'Iniciar com o Windows', icon: 'boot', type: 'toggle',
@@ -18,6 +20,8 @@ const ITEMS = [
     desc: 'Escolha entre o visual Metro (2011), com abas e blocos, e o Blades (2005), com lâminas. A troca é aplicada na hora.' },
   { key: 'hidden', label: 'Jogos ocultos', icon: 'eye', type: 'list',
     desc: 'Jogos que você ocultou não aparecem na biblioteca. Selecione um para reexibi-lo.' },
+  { key: 'storage', label: 'Armazenamento', icon: 'disk', type: 'storage',
+    desc: 'Espaço livre em cada disco e os jogos que mais ocupam espaço.' },
   { sep: true },
   { key: 'minimize', label: 'Minimizar', icon: 'min', type: 'action',
     desc: 'Minimiza o Blade Dash e mostra a área de trabalho. Ele continua aberto em segundo plano.' },
@@ -90,8 +94,28 @@ export function createSistema() {
       const cur = currentTheme();
       kids.push(h('div', { class: 'state' }, h('span', { text: 'Atual: ' + THEMES[cur] + ' — pressione A para usar ' + THEMES[cur === 'metro' ? 'blades' : 'metro'] })));
     }
+    if (it.type === 'storage') kids.push(storagePanel());
     if (it.key === 'shutdown') kids.push(h('div', { class: 'state warn', text: 'Salve seus jogos antes de desligar.' }));
     panel.replaceChildren(...kids, about);
+  }
+
+  // --- armazenamento (lido ao focar o item)
+  let storageAsked = false;
+  function storagePanel() {
+    if (!caps.storage) return h('div', { class: 'state', text: 'Indisponível nesta versão.' });
+    if (!storageAsked) { storageAsked = true; loadStorage(); }
+    const l = state.storage;
+    if (!l) return h('div', { class: 'state', text: 'Lendo os discos...' });
+    if (!l.length) return h('div', { class: 'state', text: 'Informação de disco indisponível.' });
+    const pct = (v, t) => (t > 0 ? (v / t * 100).toFixed(2) + '%' : '0');
+    return h('div', { style: { marginTop: '20px', maxHeight: '360px', overflow: 'hidden' } }, l.map((d) => {
+      const used = d.total - d.free, games = Math.min(used, d.gamesBytes || 0);
+      return h('div', { class: 'drv' },
+        h('h3', { text: `${d.drive} ${d.label || ''} — ${fmtBytes(d.free)} livres de ${fmtBytes(d.total)}` }),
+        h('div', { class: 'dbar' }, h('i', { class: 'g', style: { width: pct(games, d.total) } }), h('i', { class: 'o', style: { width: pct(used - games, d.total) } })),
+        h('div', { class: 'lg' }, h('span', { text: 'jogos ' + fmtBytes(games) }), h('span', { text: 'outros ' + fmtBytes(used - games) }), h('span', { text: 'livre ' + fmtBytes(d.free) })),
+        (d.games || []).length ? h('div', { class: 'top' }, [...d.games].sort((a, b) => b.bytes - a.bytes).slice(0, 4).map((g) => h('div', {}, h('span', { text: g.name }), h('b', { text: fmtBytes(g.bytes) })))) : null);
+    }));
   }
 
   async function toggle(it) {
@@ -103,6 +127,7 @@ export function createSistema() {
     const it = items[idx];
     if (it.type === 'toggle') return toggle(it);
     if (it.type === 'theme') return switchTheme();
+    if (it.type === 'storage') { storageAsked = false; sfx.select(); return renderPanel(); } // A = reler os discos
     if (it.type === 'list') {
       if (hidden.length) { zone = 'hidden'; hidIdx = Math.min(hidIdx, hidden.length - 1); sfx.move(); paint(); }
       else sfx.error();
@@ -140,7 +165,7 @@ export function createSistema() {
   function hints() {
     if (zone === 'hidden') return [['a', 'Reexibir'], ['b', 'Voltar'], ['lbrb', 'Trocar blade'], ['guide', 'Guia']];
     const it = items[idx];
-    const lbl = it.type === 'toggle' ? 'Alternar' : it.type === 'list' ? 'Abrir' : it.type === 'theme' ? 'Trocar visual' : 'Selecionar';
+    const lbl = it.type === 'toggle' ? 'Alternar' : it.type === 'list' ? 'Abrir' : it.type === 'theme' ? 'Trocar visual' : it.type === 'storage' ? 'Atualizar' : 'Selecionar';
     return [['a', lbl], ['lbrb', 'Trocar blade'], ['guide', 'Guia']];
   }
   function pointer(target, type) {
@@ -166,6 +191,7 @@ export function createSistema() {
   on('games', refresh);
   on('settings', () => { paintToggles(); renderPanel(); });
   on('pad', () => renderPanel());
+  on('storage', () => { if (items[idx] && items[idx].type === 'storage') renderPanel(); });
   refresh();
 
   return {

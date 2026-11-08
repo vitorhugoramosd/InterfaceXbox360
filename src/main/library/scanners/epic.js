@@ -47,6 +47,7 @@ async function scan() {
       coverHints: { searchName: name },
       lastPlayed: null,
       playtimeMinutes: 0,
+      sizeBytes: +m.InstallSize || null,
     });
   }
   return out;

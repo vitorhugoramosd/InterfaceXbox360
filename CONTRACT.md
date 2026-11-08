@@ -73,4 +73,28 @@ dash.minimize()  dash.quit()  dash.toggleFullscreen()
 dash.shutdownPC()          // desligar o PC (UI SEMPRE confirma antes)
 ```
 
+## v2 — não instalados, downloads, armazenamento, ofertas
+
+Backend (`lib`), todos nunca lançam exceção para a UI (retornam vazio/erro amigável):
+
+```js
+await lib.getUninstalled()   // UninstalledGame[] — jogos da biblioteca Steam que não estão instalados
+// { id: "steam:1245040", source: "steam", name, cover, hero, installed: false }
+await lib.install(id)        // { ok, error? } — abre steam://install/<appid> (diálogo de instalação da Steam)
+lib.getDownloads()           // Download[] — downloads/atualizações em andamento (Steam, via appmanifest)
+// { id, name, cover, state: "downloading"|"paused"|"queued"|"updating", progress: 0..1, bytesDownloaded, bytesTotal }
+await lib.getStorage()       // Drive[]
+// { drive: "C:", label: "Windows", total, free, gamesBytes, games: [{ id, name, bytes }] }  (bytes = número)
+await lib.getOffers({force}) // { fetchedAt, currency: "BRL",
+//   steam: [{ appid, name, image, discount, originalPrice, finalPrice, priceText, originalText, url, owned }],
+//   epicFree: [{ title, image, url, startDate, endDate, current: true|false }] }   cache de 1 h
+await lib.openStore(target)  // { ok, error? } — target: "steam:<appid>" | URL https das lojas Steam/Epic (whitelist)
+// Eventos: 'downloads' (Download[]) a cada mudança; 'uninstalled-updated' (UninstalledGame[]);
+//          quando um download termina, o jogo entra em getGames() e 'covers-updated' é emitido.
+// Game ganha campos: sizeBytes (número|null), drive ("C:"|null).
+```
+
+UI (`window.dash`): `getUninstalled() install(id) getDownloads() getStorage() getOffers(force) openStore(target)
+onDownloads(cb) onUninstalledUpdated(cb)`.
+
 Quando `window.dash` não existe (abrir index.html no navegador), a UI usa um mock com jogos de exemplo.

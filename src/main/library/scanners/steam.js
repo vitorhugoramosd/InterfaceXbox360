@@ -157,6 +157,7 @@ async function scan() {
         },
         lastPlayed: lastSec ? lastSec * 1000 : null,
         playtimeMinutes: lc.playtime || 0,
+        sizeBytes: +u.getCI(st, 'SizeOnDisk') || null,
       });
     }
   }
@@ -168,4 +169,4 @@ async function libraries() {
   return sp ? libraryPaths(sp) : [];
 }
 
-module.exports = { scan, findSteamPath, libraries, localArt };
+module.exports = { scan, findSteamPath, libraries, libraryPaths, localArt, SKIP_APPIDS, SKIP_NAME };

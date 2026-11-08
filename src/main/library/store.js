@@ -15,6 +15,10 @@ function emptyData() {
     stats: {}, // id -> { lastPlayed, playtimeMinutes, addedAt }
     cache: [], // entradas brutas do último scan
     cacheAt: 0,
+    uninstalled: null, // UninstalledGame brutos (Steam) do último cálculo
+    appNames: {}, // appid -> { name, type } vindos da API da loja (fallback do appinfo.vdf)
+    sizes: {}, // id -> { bytes, at } tamanho de pasta calculado (cache 24h)
+    offers: null, // último resultado de getOffers
   };
 }
 
@@ -44,6 +48,10 @@ class Store {
       d.stats = raw.stats && typeof raw.stats === 'object' ? raw.stats : {};
       d.cache = Array.isArray(raw.cache) ? raw.cache : [];
       d.cacheAt = +raw.cacheAt || 0;
+      d.uninstalled = Array.isArray(raw.uninstalled) ? raw.uninstalled : null;
+      d.appNames = raw.appNames && typeof raw.appNames === 'object' ? raw.appNames : {};
+      d.sizes = raw.sizes && typeof raw.sizes === 'object' ? raw.sizes : {};
+      d.offers = raw.offers && typeof raw.offers === 'object' ? raw.offers : null;
     }
     this.data = d;
     return d;

@@ -2,6 +2,8 @@
 import { h } from '../ui/util.js';
 import { createCover, palette } from '../ui/cover.js';
 import { state } from '../store.js';
+import { downloadFor, downloadLabel } from '../extras.js';
+import { fmtBytes } from '../ui/util.js';
 
 // Ícones de traço simples, desenhados para o tamanho grande dos blocos
 const ICONS = {
@@ -17,6 +19,9 @@ const ICONS = {
   boot:    '<rect x="10" y="6" width="28" height="36"/><path d="M19 17l11 7-11 7z"/>',
   eye:     '<path d="M4 24s7-12 20-12 20 12 20 12-7 12-20 12S4 24 4 24z"/><circle cx="24" cy="24" r="5"/><path d="M8 40L40 8"/>',
   theme:   '<rect x="6" y="8" width="16" height="14"/><rect x="26" y="8" width="16" height="32"/><rect x="6" y="26" width="16" height="14"/>',
+  download:'<path d="M24 6v24M14 21l10 10 10-10M9 41h30"/>',
+  disk:    '<rect x="5" y="12" width="38" height="24"/><path d="M12 28h10"/><circle cx="35" cy="28" r="1.6"/>',
+  tag:     '<path d="M6 25V6h19l17 17-19 19z"/><circle cx="15" cy="15" r="3"/>',
   pad:     '<path d="M14 15h20a9 9 0 0 1 8.7 11.2l-2.3 9.3a4.5 4.5 0 0 1-7.9 1.7L29 33H19l-3.5 4.2a4.5 4.5 0 0 1-7.9-1.7l-2.3-9.3A9 9 0 0 1 14 15z"/><path d="M15 21v8M11 25h8"/><circle cx="31" cy="23" r="1.2"/><circle cx="35" cy="27" r="1.2"/>',
   user:    '<circle cx="24" cy="17" r="8"/><path d="M8 41c2-8 8.5-12 16-12s14 4 16 12"/>',
   grid:    '<rect x="7" y="7" width="15" height="15"/><rect x="26" y="7" width="15" height="15"/><rect x="7" y="26" width="15" height="15"/><rect x="26" y="26" width="15" height="15"/>',
@@ -67,13 +72,27 @@ export function imageTile(g, { label, sub, wide = true } = {}) {
     h('div', { class: 'mt-grad' }),
     g && g.favorite ? h('div', { class: 'mt-star', text: '★' }) : null,
     g && state.running === g.id ? h('div', { class: 'mt-run', text: 'em jogo' }) : null,
+    g ? dlBar(g.id) : null,
     h('div', { class: 'mt-label' }, h('div', { class: 'mt-name', text: label || (g ? g.name : '') }), sub ? h('div', { class: 'mt-sub', text: sub }) : null));
 }
 
-/** Bloco de capa (retrato) — nome aparece só com foco */
-export function coverTile(g, lazy) {
-  return h('div', { class: 'mt-cover' },
+/** Barra de progresso de download sobre o bloco do jogo (ou null) */
+export function dlBar(id, { detail = false } = {}) {
+  const d = downloadFor(id);
+  if (!d) return null;
+  const pct = Math.round((d.progress || 0) * 100);
+  const txt = detail && d.bytesTotal ? `${downloadLabel(d)} · ${fmtBytes(d.bytesDownloaded)} de ${fmtBytes(d.bytesTotal)}` : downloadLabel(d);
+  return h('div', { class: 'mt-dl' + (d.state === 'queued' || d.state === 'paused' ? ' idle' : '') },
+    h('div', { class: 'mt-dl-txt', text: txt }),
+    h('div', { class: 'mt-dl-bar' }, h('i', { style: { width: pct + '%' } })));
+}
+
+/** Bloco de capa (retrato) — nome aparece só com foco. uninst: não instalado (esmaecido + seta) */
+export function coverTile(g, lazy, { uninst = false } = {}) {
+  return h('div', { class: 'mt-cover' + (uninst ? ' uninst' : '') },
     createCover(g, { lazy }),
+    uninst ? h('div', { class: 'mt-dlbadge' }, micon('download')) : null,
+    dlBar(g.id),
     g.favorite ? h('div', { class: 'mt-star', text: '★' }) : null,
     state.running === g.id ? h('div', { class: 'mt-run', text: 'em jogo' }) : null,
     h('div', { class: 'mt-grad' }),
@@ -81,4 +100,8 @@ export function coverTile(g, lazy) {
 }
 
 /** Assinatura de um jogo para reaproveitar o elemento quando nada mudou */
-export const gameSig = (g) => g ? [g.id, g.name, g.cover, g.hero, g.favorite, state.running === g.id, g.lastPlayed, g.playtimeMinutes].join('~') : 'none';
+export const gameSig = (g) => {
+  if (!g) return 'none';
+  const d = downloadFor(g.id);
+  return [g.id, g.name, g.cover, g.hero, g.favorite, state.running === g.id, g.lastPlayed, g.playtimeMinutes, d ? d.state + Math.round(d.progress * 100) : ''].join('~');
+};

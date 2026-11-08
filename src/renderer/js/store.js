@@ -8,6 +8,12 @@ export const state = {
   running: null,      // id do jogo em execução
   loading: false,     // reescaneando
   padConnected: false,
+  // v2
+  uninstalled: [],    // jogos da biblioteca Steam não instalados
+  downloads: [],      // downloads/atualizações em andamento
+  storage: null,      // Drive[] | null (ainda não carregado)
+  offers: null,       // { fetchedAt, steam, epicFree, error? } | null
+  offersStatus: 'idle', // idle | loading | ok | error
 };
 
 const listeners = new Map();

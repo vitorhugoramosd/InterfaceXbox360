@@ -83,6 +83,7 @@ export class TilePage {
   }
 
   setActive(v) {
+    if (v && !this.active && this.onActivate) setTimeout(() => this.onActivate(), 0);
     this.active = v;
     this.el.classList.toggle('active', v);
     this.paint(false);

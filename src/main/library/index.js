@@ -8,6 +8,13 @@
 //    com a lista nova (o main repassa como 'games-updated'). Sem cache: faz o scan e espera.
 //  - Downloads de capa sempre em background após getGames()/rescan(); ao terminar,
 //    emite 'covers-updated' com a lista completa.
+//  v2:
+//  - getUninstalled(): cache (library.json) recalculado a cada rescan(); capas em background
+//    (emite 'uninstalled-updated' quando chegam).
+//  - getDownloads() é síncrono (estado mais recente dos appmanifest); 'downloads' a cada mudança.
+//  - getStorage(): tamanhos Steam/Epic dos manifests; demais pastas somadas em background
+//    (cache 24 h) — até terminar, o jogo não aparece na lista do disco (sizeBytes null).
+//  - getOffers(): cache 1 h; falha de rede -> último cache com stale:true.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -15,7 +22,10 @@ const { EventEmitter } = require('events');
 const u = require('./util');
 const { Store } = require('./store');
 const { Covers } = require('./covers');
-const { Launcher } = require('./launcher');
+const { Launcher, openUri } = require('./launcher');
+const { SteamLib } = require('./steamlib');
+const { Storage } = require('./storage');
+const { Offers } = require('./offers');
 
 const scanners = {
   steam: require('./scanners/steam'),
@@ -34,6 +44,9 @@ const lib = new EventEmitter();
 let store = null;
 let covers = null;
 let launcher = null;
+let steamLib = null;
+let storage = null;
+let offers = null;
 let initPromise = null;
 let scanPromise = null;
 
@@ -63,6 +76,8 @@ function toGame(raw) {
     hidden: !!ov.hidden,
     addedAt: st.addedAt || null,
     running: launcher ? launcher.isRunning(raw.id) : false,
+    sizeBytes: storage ? storage.sizeOf(raw) : raw.sizeBytes || null,
+    drive: storage ? storage.driveOf(raw) : null,
   };
 }
 
@@ -138,12 +153,42 @@ function emitGames() {
   lib.emit('covers-updated', buildGames());
 }
 
+function toUninstalled(raw) {
+  const art = covers.resolve(raw, store.override(raw.id));
+  return { id: raw.id, source: 'steam', name: raw.name, cover: art.cover, hero: art.hero, installed: false };
+}
+
+function buildUninstalled() {
+  return (store.data.uninstalled || []).map(toUninstalled);
+}
+
+function emitUninstalled() {
+  lib.emit('uninstalled-updated', buildUninstalled());
+}
+
+/** Recalcula não instalados (síncrono, ~30 ms) e baixa capas que faltam em background. */
+function refreshUninstalled() {
+  try {
+    steamLib.computeUninstalled();
+  } catch {}
+  return store.data.uninstalled || [];
+}
+
 function queueCovers() {
   setImmediate(() => {
     try {
-      covers.queue(store.data.cache);
+      covers.queue(store.data.cache.concat(store.data.uninstalled || []));
+    } catch {}
+    try {
+      storage.queueSizes(store.data.cache, emitGames);
     } catch {}
   });
+}
+
+function safe(fn, fallback) {
+  return Promise.resolve()
+    .then(fn)
+    .catch(() => fallback);
 }
 
 // ---------------- API pública ----------------
@@ -154,9 +199,32 @@ lib.init = function init({ dataDir } = {}) {
   initPromise = (async () => {
     store = new Store(dataDir);
     store.load();
-    covers = new Covers(dataDir, { onUpdated: emitGames });
+    covers = new Covers(dataDir, {
+      onUpdated: () => {
+        emitGames();
+        emitUninstalled();
+      },
+    });
     launcher = new Launcher(store);
     launcher.on('game-state', (s) => lib.emit('game-state', s));
+    storage = new Storage(store);
+    steamLib = new SteamLib({ store, covers });
+    offers = new Offers(store, () => steamLib.ownedSet());
+    steamLib.on('downloads', (list) => lib.emit('downloads', list));
+    steamLib.on('uninstalled-changed', emitUninstalled);
+    // download terminou / jogo desinstalado: reescaneia e avisa a UI
+    steamLib.on('installed-changed', () => {
+      lib
+        .rescan()
+        .then(() => {
+          emitGames();
+          emitUninstalled();
+        })
+        .catch(() => {});
+    });
+    try {
+      await steamLib.init();
+    } catch {}
   })();
   return initPromise;
 };
@@ -169,6 +237,10 @@ lib.rescan = async function rescan() {
     });
   }
   await scanPromise;
+  try {
+    steamLib.syncWatchers(); // ex.: disco com biblioteca Steam reconectado
+  } catch {}
+  refreshUninstalled();
   queueCovers();
   return buildGames();
 };
@@ -276,8 +348,84 @@ lib.setSettings = async function setSettings(patch = {}) {
   return s;
 };
 
+// ---------------- v2 ----------------
+
+lib.getUninstalled = function getUninstalled() {
+  return safe(async () => {
+    ensureInit();
+    if (!store.data.uninstalled) refreshUninstalled();
+    queueCovers();
+    return buildUninstalled();
+  }, []);
+};
+
+lib.install = async function install(id) {
+  try {
+    ensureInit();
+    const m = /^steam:(\d+)$/.exec(String(id || ''));
+    if (!m) return { ok: false, error: 'Por enquanto só dá para instalar jogos da Steam por aqui.' };
+    const r = await openUri('steam://install/' + m[1]);
+    if (r.ok) steamLib.watchInstall();
+    return r;
+  } catch (e) {
+    return { ok: false, error: 'Não foi possível iniciar a instalação.' };
+  }
+};
+
+lib.getDownloads = function getDownloads() {
+  try {
+    ensureInit();
+    return steamLib.getDownloads();
+  } catch {
+    return [];
+  }
+};
+
+lib.getStorage = function getStorage() {
+  return safe(async () => {
+    ensureInit();
+    return storage.getStorage(buildGames());
+  }, []);
+};
+
+lib.getOffers = function getOffers({ force = false } = {}) {
+  return safe(
+    async () => {
+      ensureInit();
+      return offers.get({ force });
+    },
+    { fetchedAt: null, currency: 'BRL', steam: [], epicFree: [], stale: true }
+  );
+};
+
+const STORE_HOSTS = ['store.steampowered.com', 'store.epicgames.com'];
+
+lib.openStore = async function openStore(target) {
+  try {
+    const t = String(target || '').trim();
+    const m = /^steam:(\d+)$/.exec(t);
+    if (m) return await openUri('steam://store/' + m[1]);
+    let url;
+    try {
+      url = new URL(t);
+    } catch {
+      return { ok: false, error: 'Endereço de loja inválido.' };
+    }
+    if (url.protocol !== 'https:' || !STORE_HOSTS.includes(url.hostname.toLowerCase()) || url.username || url.password) {
+      return { ok: false, error: 'Só é possível abrir páginas das lojas Steam e Epic.' };
+    }
+    return await openUri(url.href);
+  } catch {
+    return { ok: false, error: 'Não foi possível abrir a loja.' };
+  }
+};
+
 /** Para testes: espera os downloads de capa pendentes. */
 lib._coversIdle = () => (covers ? covers.whenIdle() : Promise.resolve());
-lib._dispose = () => launcher && launcher.dispose();
+lib._sizingBusy = () => !!(storage && storage.sizing);
+lib._dispose = () => {
+  if (launcher) launcher.dispose();
+  if (steamLib) steamLib.dispose();
+};
 
 module.exports = lib;

@@ -112,6 +112,9 @@ const ICONS = {
   home:    '<path d="M4 11l8-7 8 7"/><path d="M6.5 9.5V20h11V9.5"/>',
   gear:    '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
   back:    '<path d="M10 6l-6 6 6 6M4 12h16"/>',
+  download:'<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
+  disk:    '<rect x="3.5" y="6" width="17" height="12" rx="1.5"/><path d="M7 14h4"/><circle cx="16.5" cy="14" r=".8"/>',
+  tag:     '<path d="M3.5 12.5V4h8.5l8.5 8.5-8.5 8.5z"/><circle cx="8" cy="8.5" r="1.4"/>',
 };
 export function icon(name) {
   const span = document.createElement('span');
@@ -134,3 +137,15 @@ export function put(el, ...kids) {
   el.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
   return el;
 }
+
+/** Bytes -> "12,3 GB" (pt-BR, 1 casa); abaixo de 1 GB usa MB */
+export function fmtBytes(n) {
+  if (n == null || isNaN(n)) return '—';
+  if (n <= 0) return '0 GB';
+  const gb = n / 1024 ** 3;
+  if (gb >= 1000) return (gb / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' TB';
+  if (gb >= 1) return gb.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' GB';
+  return Math.max(1, Math.round(n / 1024 ** 2)).toLocaleString('pt-BR') + ' MB';
+}
+export const fmtPct = (p) => Math.round((p || 0) * 100) + '%';
+export const dateDM = (ms) => (ms ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(new Date(ms)) : '');

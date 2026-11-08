@@ -30,8 +30,8 @@ body.theme-metro.ready #metro { animation: metroIn .9s cubic-bezier(.1, .9, .2, 
 #metro { position: absolute; inset: 0; }
 .mtabs {
   position: absolute; left: 106px; top: 78px;
-  display: flex; gap: 48px; white-space: nowrap;
-  font-size: 52px; font-weight: 300; letter-spacing: -.5px; text-transform: lowercase;
+  display: flex; gap: 40px; white-space: nowrap;
+  font-size: 46px; font-weight: 300; letter-spacing: -.5px; text-transform: lowercase;
   transition: transform .5s cubic-bezier(.1, .9, .2, 1);
   z-index: 3;
 }
@@ -210,3 +210,73 @@ body.theme-metro .ring-loader .seg { stroke: var(--m-g1); filter: none; }
 body.theme-metro .ring-loader .seg.s2 { stroke: var(--m-g2); }
 body.theme-metro .mt .ring-loader .track { stroke: rgba(255,255,255,.2); }
 body.theme-metro .mt .ring-loader .seg { stroke: #fff; }
+
+/* ---------------------------------------------------- v2: downloads */
+.mt-dl { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; padding: 6px 10px 8px; background: rgba(0,0,0,.72); color: #fff; }
+.mt-dl-txt { font-size: 15px; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-dl-bar { height: 5px; background: rgba(255,255,255,.22); }
+.mt-dl-bar i { display: block; height: 100%; background: var(--m-g2); transition: width .8s ease; }
+.mt-dl.idle .mt-dl-bar i { background: #9b9b9b; }
+.mt-image .mt-dl { padding: 8px 16px 10px; }
+.mt-image .mt-dl ~ .mt-label, .mt-image .mt-label:has(~ .mt-dl) { bottom: 58px; }
+.mt-grad.full { height: 100%; background: linear-gradient(to bottom, rgba(0,0,0,.15), rgba(0,0,0,.75)); }
+
+/* não instalados: capa esmaecida + seta */
+.mt-cover.uninst .cover { filter: grayscale(.85) brightness(.6); transition: filter .2s; }
+.mt.focus .mt-cover.uninst .cover { filter: grayscale(.35) brightness(.85); }
+.mt-dlbadge {
+  position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%); z-index: 2;
+  width: 76px; height: 76px; padding: 14px; color: #fff;
+  background: rgba(16,124,16,.85);
+}
+.mt-dlbadge .m-ico, .mt-dlbadge svg { width: 100%; height: 100%; display: block; }
+
+/* indicador no topo (flat) */
+body.theme-metro .dl-ind { border-radius: 0; background: #3a3a3a; color: #fff; border: 0; box-shadow: none; font-weight: 400; height: 42px; }
+body.theme-metro .dl-ind .arr { color: #fff; }
+body.theme-metro .dl-ind .bar { border-radius: 0; }
+body.theme-metro .dl-ind .bar i { background: var(--m-g2); }
+
+/* ------------------------------------------------------------ loja */
+.mt.dim { opacity: .62; }
+.mt.dim.focus { opacity: 1; }
+.mt-epic .me-k {
+  position: absolute; left: 0; top: 0; padding: 8px 14px; z-index: 2;
+  background: var(--m-g1); color: #fff; font-size: 20px; text-transform: lowercase;
+}
+.mt-epic.soon .me-k { background: #5a5a5a; }
+.mt-offer { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.mo-img { position: relative; flex: 1; overflow: hidden; }
+.mo-info { height: 84px; padding: 10px 14px; background: #2b2b2b; display: flex; flex-direction: column; justify-content: space-between; }
+.mo-name { font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mo-price { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.mo-disc { background: #4c6b22; color: #beee11; font-size: 22px; font-weight: 600; padding: 2px 8px; }
+.mo-vals { display: flex; align-items: baseline; gap: 10px; background: #344654; padding: 3px 10px; }
+.mo-vals s { font-size: 14px; color: #8a9aa6; }
+.mo-vals b { font-size: 18px; font-weight: 400; color: #beee11; }
+.mt-offer .mt-run { background: #5c7e10; }
+.mt.skeleton { background: #cfcfcf; animation: skel 1.2s ease-in-out infinite alternate; cursor: default; }
+@keyframes skel { from { opacity: .45; } to { opacity: .9; } }
+
+/* --------------------------------------------------- armazenamento */
+.m-dbar { display: flex; height: 8px; margin-top: 8px; background: rgba(255,255,255,.3); }
+.m-dbar i { display: block; height: 100%; }
+.m-dbar i.g { background: #fff; }
+.m-dbar i.o { background: rgba(255,255,255,.6); }
+.mt-drive { position: absolute; inset: 0; padding: 26px 28px; color: #fff; }
+.mt-drive .m-dbar { height: 14px; margin: 16px 0 10px; background: #555; }
+.mt-drive .m-dbar i.g { background: var(--m-g2); }
+.mt-drive .m-dbar i.o { background: #9b9b9b; }
+.md-head { display: flex; align-items: baseline; gap: 14px; }
+.md-letter { font-size: 52px; font-weight: 200; }
+.md-label { font-size: 24px; font-weight: 300; opacity: .85; }
+.md-free { font-size: 20px; opacity: .85; }
+.md-legend { display: flex; gap: 18px; font-size: 15px; opacity: .85; margin-bottom: 18px; }
+.md-legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; background: #555; }
+.md-legend .g::before { background: var(--m-g2); }
+.md-legend .o::before { background: #9b9b9b; }
+.md-list { border-top: 1px solid rgba(255,255,255,.14); }
+.md-row { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 18px; }
+.md-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.md-row b { font-weight: 400; white-space: nowrap; opacity: .85; }
+.md-row.empty { opacity: .6; }

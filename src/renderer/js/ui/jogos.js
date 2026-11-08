@@ -7,11 +7,13 @@ import { sfx } from '../sound.js';
 import { launchGame, toggleFavorite, openGameOptions, addGame, rescan } from './actions.js';
 import { glyph } from './hints.js';
 import { mouseActive } from '../input.js';
+import { caps, confirmInstall, downloadFor, downloadLabel } from '../extras.js';
 
-const MENU = [
+const BASE_MENU = [
   { key: 'lib',  label: 'Biblioteca de Jogos',  icon: 'lib' },
   { key: 'fav',  label: 'Favoritos',            icon: 'star' },
   { key: 'rec',  label: 'Jogados Recentemente', icon: 'clock' },
+  { key: 'uninst', label: 'Não Instalados',     icon: 'download' },
   { key: 'add',  label: 'Adicionar Jogo',       icon: 'plus', action: true },
   { key: 'scan', label: 'Atualizar Biblioteca', icon: 'refresh', action: true },
 ];
@@ -19,17 +21,20 @@ const EMPTY = {
   lib: ['Nenhum jogo na biblioteca.', 'Use “Adicionar Jogo” ou “Atualizar Biblioteca”.'],
   fav: ['Nenhum favorito ainda.', 'Pressione Y em um jogo para favoritá-lo.'],
   rec: ['Nada jogado recentemente.', 'Os jogos que você abrir pelo Blade Dash aparecem aqui.'],
+  uninst: ['Nenhum jogo para baixar.', 'Todos os jogos da sua biblioteca Steam já estão instalados.'],
 };
 
 export function createJogos() {
+  // 'Não Instalados' só aparece se o backend suporta (v2)
+  const MENU = BASE_MENU.filter((m) => m.key !== 'uninst' || caps.uninstalled);
   let zone = 'menu';           // 'menu' | 'games'
   let menuIdx = 0;
   let listKey = 'lib';
   let view = 'row';            // 'row' | 'grid'
   let cols = 7;
-  const lists = { lib: [], fav: [], rec: [] };
-  const pos = { lib: 0, fav: 0, rec: 0 };
-  const focusId = { lib: null, fav: null, rec: null };
+  const lists = { lib: [], fav: [], rec: [], uninst: [] };
+  const pos = { lib: 0, fav: 0, rec: 0, uninst: 0 };
+  const focusId = { lib: null, fav: null, rec: null, uninst: null };
   let tiles = [], tileSig = '', focusedTile = null;
   let lazy = null;
 
@@ -37,8 +42,8 @@ export function createJogos() {
   const menuRows = [];
   const menuEl = h('div', { class: 'menu' });
   MENU.forEach((m, i) => {
-    if (i === 3) menuEl.append(h('div', { class: 'sep' }));
-    const row = h('div', { class: 'mi', dataset: { nav: 'menu', i } }, icon(m.icon), h('span', { text: m.label }), m.action ? null : h('span', { class: 'cnt' }));
+    if (m.key === 'add') menuEl.append(h('div', { class: 'sep' }));
+    const row = h('div', { class: 'mi', dataset: { nav: 'menu', i, key: m.key } }, icon(m.icon), h('span', { text: m.label }), m.action ? null : h('span', { class: 'cnt' }));
     menuRows.push(row);
     menuEl.append(row);
   });
@@ -71,6 +76,7 @@ export function createJogos() {
     lists.lib = sortAlpha(vis);
     lists.fav = sortAlpha(vis.filter((g) => g.favorite));
     lists.rec = vis.filter((g) => g.lastPlayed).sort((a, b) => b.lastPlayed - a.lastPlayed);
+    lists.uninst = sortAlpha(state.uninstalled || []);
     for (const k of Object.keys(lists)) {
       const L = lists[k];
       const i = focusId[k] ? L.findIndex((g) => g.id === focusId[k]) : -1;
@@ -80,6 +86,7 @@ export function createJogos() {
     menuRows[0].querySelector('.cnt').textContent = fmtNum(lists.lib.length);
     menuRows[1].querySelector('.cnt').textContent = fmtNum(lists.fav.length);
     menuRows[2].querySelector('.cnt').textContent = fmtNum(lists.rec.length);
+    if (rowOf('uninst')) rowOf('uninst').querySelector('.cnt').textContent = fmtNum(lists.uninst.length);
     const hidden = state.games.length - vis.length;
     const total = vis.reduce((s, g) => s + (g.playtimeMinutes || 0), 0);
     put(foot, 
@@ -87,6 +94,17 @@ export function createJogos() {
       h('div', {}, h('b', { text: fmtNum(Math.round(total / 60)) }), ' horas jogadas'),
       hidden ? h('div', { text: `${hidden} oculto${hidden > 1 ? 's' : ''}` }) : null);
   }
+
+  /** barra de download na miniatura (v2) */
+  function paintDl(t, g) {
+    const d = downloadFor(g.id);
+    let el = t.querySelector('.tdl');
+    if (!d) { if (el) el.remove(); return; }
+    if (!el) { el = h('div', { class: 'tdl' }, h('span'), h('b', {}, h('i'))); t.append(el); }
+    el.firstChild.textContent = downloadLabel(d);
+    el.querySelector('i').style.width = Math.round((d.progress || 0) * 100) + '%';
+  }
+  const rowOf = (key) => menuRows.find((r) => r.dataset.key === key);
 
   // ---------- render da lista
   function renderList() {
@@ -97,8 +115,9 @@ export function createJogos() {
       if (lazy) lazy.disconnect();
       lazy = lazyObserver(listEl);
       tiles = L.map((g, i) => {
-        const t = h('div', { class: 'tile' + (g.favorite ? ' fav' : '') + (state.running === g.id ? ' running' : ''), dataset: { nav: 'tile', i } },
-          createCover(g, { lazy }), h('div', { class: 'tbadge', text: '★' }));
+        const t = h('div', { class: 'tile' + (g.favorite ? ' fav' : '') + (state.running === g.id ? ' running' : '') + (listKey === 'uninst' ? ' uninst' : ''), dataset: { nav: 'tile', i } },
+          createCover(g, { lazy }), h('div', { class: 'tbadge', text: '★' }), listKey === 'uninst' ? h('div', { class: 'tdown', text: '⬇' }) : null);
+        paintDl(t, g);
         return t;
       });
       focusedTile = null;
@@ -112,6 +131,7 @@ export function createJogos() {
         setCover(t.firstChild, g, lazy);
         t.classList.toggle('fav', !!g.favorite);
         t.classList.toggle('running', state.running === g.id);
+        paintDl(t, g);
       });
     }
     const empty = L.length === 0;
@@ -182,8 +202,18 @@ export function createJogos() {
       h('span', { class: 'badge ' + g.source, text: sourceLabel(g.source) }),
       g.favorite ? h('span', { class: 'badge fav', text: '★ Favorito' }) : null,
       state.running === g.id ? h('span', { class: 'badge run', text: '● Em jogo' }) : null);
-    featLast.replaceChildren(h('span', { class: 'k', text: 'Jogado pela última vez: ' }), g.lastPlayed ? relTime(g.lastPlayed) : 'nunca');
-    featTime.replaceChildren(h('span', { class: 'k', text: 'Tempo de jogo: ' }), playtime(g.playtimeMinutes));
+    const un = listKey === 'uninst';
+    featCta.children[1].textContent = un ? 'Baixar' : 'Jogar';
+    for (const i of [2, 3, 4]) featCta.children[i].style.display = un ? 'none' : '';
+    if (un) {
+      const d = downloadFor(g.id);
+      featBadges.append(h('span', { class: 'badge custom', text: 'Não instalado' }));
+      featLast.replaceChildren(h('span', { class: 'k', text: 'Estado: ' }), d ? downloadLabel(d) : 'disponível para baixar');
+      featTime.replaceChildren(h('span', { class: 'k', text: 'Pressione A para baixar pela Steam' }));
+    } else {
+      featLast.replaceChildren(h('span', { class: 'k', text: 'Jogado pela última vez: ' }), g.lastPlayed ? relTime(g.lastPlayed) : 'nunca');
+      featTime.replaceChildren(h('span', { class: 'k', text: 'Tempo de jogo: ' }), playtime(g.playtimeMinutes));
+    }
     featPos.textContent = `${pos[listKey] + 1} de ${cur().length}`;
     clearTimeout(bgTimer);
     bgTimer = setTimeout(() => setBackdrop(g), 140);
@@ -293,10 +323,10 @@ export function createJogos() {
           else if (Math.floor(p / cols) < Math.floor((L.length - 1) / cols)) moveTo(L.length - 1);
         }
         return true;
-      case 'a': launchGame(g); return true;
+      case 'a': if (listKey === 'uninst') confirmInstall(g); else launchGame(g); return true;
       case 'b': toMenu(); return true;
-      case 'x': case 'start': openGameOptions(g); return true;
-      case 'y': toggleFavorite(g); return true;
+      case 'x': case 'start': if (listKey !== 'uninst') openGameOptions(g); return true;
+      case 'y': if (listKey !== 'uninst') toggleFavorite(g); return true;
       default: return false;
     }
   }
@@ -307,6 +337,7 @@ export function createJogos() {
       return [['a', m.action ? 'Selecionar' : 'Abrir'], ['back', view === 'row' ? 'Grade' : 'Fileira'], ['lbrb', 'Trocar blade'], ['guide', 'Guia']];
     }
     const g = curGame();
+    if (listKey === 'uninst') return [['a', 'Baixar'], ['b', 'Voltar'], ['back', view === 'row' ? 'Grade' : 'Fileira'], ['lbrb', 'Trocar blade'], ['guide', 'Guia']];
     return [['a', 'Jogar'], ['b', 'Voltar'], ['x', 'Opções'], ['y', g && g.favorite ? 'Desfavoritar' : 'Favoritar'], ['back', view === 'row' ? 'Grade' : 'Fileira'], ['lbrb', 'Trocar blade'], ['guide', 'Guia']];
   }
 
@@ -326,7 +357,7 @@ export function createJogos() {
         pos[listKey] = i; focusId[listKey] = cur()[i].id;
         sfx.move(); paintFocus(false); updateFeatured();
       }
-      if (type === 'click') launchGame(cur()[i]);
+      if (type === 'click') { if (listKey === 'uninst') confirmInstall(cur()[i]); else launchGame(cur()[i]); }
     } else if (kind === 'feat' && type === 'click') {
       launchGame(curGame());
     }
@@ -347,6 +378,8 @@ export function createJogos() {
   window.addEventListener('resize', () => requestAnimationFrame(computeCols));
 
   on('games', () => { computeLists(); renderList(); });
+  on('uninstalled', () => { computeLists(); renderList(); });
+  on('downloads', () => { renderList(); if (listKey === 'uninst' || zone === 'games') updateFeatured(); });
   on('loading', () => renderList());
   on('running', () => renderList());
 

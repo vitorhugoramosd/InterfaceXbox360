@@ -70,6 +70,10 @@ Hoje o **Blade Dash abre sozinho quando o Windows liga**. Se o Jarvis passar a s
 - **Favoritos, ocultar, renomear, trocar capa, remover** (personalizados).
 - **Configurações:** iniciar com o Windows, tela cheia, sons da interface, visual (Metro/Blades), jogos ocultos, minimizar, sair, desligar o PC (com confirmação).
 - **Sons** sintetizados (WebAudio) — nenhum som original do console.
+- **Não instalados (Steam):** lista os jogos da biblioteca Steam que não estão no PC (lidos de `appcache\librarycache` + `appinfo.vdf` binário, só `type: game`; hoje 19). Botão **Baixar** abre `steam://install/<appid>` (a Steam pergunta o disco). Epic não guarda a biblioteca localmente, então não entra.
+- **Downloads:** acompanha downloads/atualizações da Steam pelos `appmanifest_*.acf` (progresso, fila, pausado); mostra barra no início, nos blocos e no topo; avisa "pronto para jogar!".
+- **Armazenamento:** espaço livre/total de cada disco e quanto os jogos ocupam (maiores jogos por disco). Em configurações → Armazenamento.
+- **Loja:** aba "loja" com ofertas da Steam (desconto, preço em R$, marca "na biblioteca") e jogos grátis da Epic (atuais e "em breve"); cache de 1 h. Abre a página no app da Steam (`steam://store/<appid>`) ou no navegador (só domínios das lojas Steam/Epic).
 
 ## 5. Visual
 
@@ -164,7 +168,9 @@ blade-dash/
     make-logo.js            recorta a esfera de uma imagem de logo → assets/local/logo.png + icon.ico
 ```
 
-**API exposta à interface (`window.dash`):** `getGames, rescan, launch(id), updateGame(id, patch), addCustomGame(), pickCover(id), removeCustomGame(id), getSettings, setSettings(patch), getProfile, onGameState(cb), onGamesUpdated(cb), minimize, quit, toggleFullscreen, shutdownPC`.
+**API exposta à interface (`window.dash`):** `getGames, rescan, launch(id), updateGame(id, patch), addCustomGame(), pickCover(id), removeCustomGame(id), getSettings, setSettings(patch), getProfile, onGameState(cb), onGamesUpdated(cb), minimize, quit, toggleFullscreen, shutdownPC`,
+e na v2: `getUninstalled, install(id), getDownloads, getStorage, getOffers(force), openStore(target), onDownloads(cb), onUninstalledUpdated(cb)` (detalhes em `CONTRACT.md`).
+Abas do visual Metro: início, jogos, recentes, plataformas, **loja**, configurações.
 
 ## 9. Jogos detectados hoje (13)
 

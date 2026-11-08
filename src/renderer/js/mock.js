@@ -3,8 +3,10 @@
 // geradas (data:), outras null (testa a capa gerada) e uma quebrada (onerror).
 // Use ?many=1 na URL para +200 jogos (teste de desempenho) e ?empty=1 para
 // começar com a biblioteca vazia (testa "Procurando seus jogos...").
+// v2: ?nodl=1 sem downloads; ?offline=1 ofertas antigas com erro; ?offersfail=1 falha total.
 
 const MIN = 60 * 1000, HOUR = 60 * MIN, DAY = 24 * HOUR;
+const GB = 1024 ** 3;
 
 function svgUrl(svg) { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); }
 
@@ -45,6 +47,8 @@ function seed() {
     id: `${source}:${id}`, source, name,
     cover: null, hero: null, installDir: `C:\\Jogos\\${name}`,
     lastPlayed: null, playtimeMinutes: 0, favorite: false, hidden: false, addedAt: now - 90 * DAY,
+    sizeBytes: Math.round((2 + (id.length * 7919 + name.length * 104729) % 120) * GB * 0.97),
+    drive: name.length % 3 === 0 ? 'C:' : 'D:',
     ...o,
   });
   return [
@@ -78,6 +82,50 @@ function manyGames() {
   return out;
 }
 
+/* ------------------------------------------------------------------ v2 */
+const UNINST_NAMES = ['Cavaleiros de Bronze', 'Ilha dos Ventos', 'Metrópole Subterrânea', 'Piloto de Tempestade', 'Fronteira Gelada',
+  'O Último Farol', 'Clã das Raposas', 'Rali Tropical', 'Dungeon de Papel', 'Guardiões do Cristal', 'Mar de Estrelas', 'Torre Arcana',
+  'Cozinha Caótica', 'Esquadrão Ômega', 'Vila Assombrada', 'Planeta Laranja', 'Samurai Neon', 'Corredor Noturno', 'Reino de Areia',
+  'Fábrica de Robôs', 'Detetive da Chuva', 'Liga de Basquete 26', 'Golfe Lunar', 'Cidade Flutuante', 'Caverna Perdida'];
+function uninstalledSeed() {
+  return UNINST_NAMES.map((name, i) => ({
+    id: `steam:${2000 + i}`, source: 'steam', name, installed: false,
+    cover: i % 3 === 1 ? null : coverArt(name, (i * 47) % 360, i),
+    hero: i % 4 === 0 ? heroArt((i * 47) % 360) : null,
+  }));
+}
+/** Cápsula larga (460x215) estilo loja */
+function capsuleArt(name, hue) {
+  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="460" height="215" viewBox="0 0 460 215">
+    <defs><linearGradient id="c" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},75%,50%)"/><stop offset="1" stop-color="hsl(${hue + 60},70%,14%)"/></linearGradient></defs>
+    <rect width="460" height="215" fill="url(#c)"/><circle cx="380" cy="60" r="70" fill="hsl(${hue + 30},90%,70%)" opacity=".5"/>
+    <path d="M0 170 L120 110 L220 150 L330 90 L460 160 L460 215 L0 215Z" fill="hsl(${hue - 20},50%,10%)" opacity=".8"/>
+    <text x="24" y="70" font-family="Segoe UI, sans-serif" font-weight="900" font-size="34" fill="#fff">${esc(name.toUpperCase())}</text></svg>`);
+}
+const brl = (v) => 'R$ ' + v.toFixed(2).replace('.', ',');
+function offersSeed() {
+  const names = ['Galáxia Rebelde', 'Pistoleiros do Oeste', 'Fazenda Feliz', 'Dragões de Gelo', 'Corrida Infinita', 'Cidade Pixel', 'Abismo Azul',
+    'Arena dos Titãs', 'Mansão do Enigma', 'Futebol Total 26', 'Cosmonauta', 'Tática Medieval', 'Simulador de Trem', 'Neon Ronin', 'Vale Sombrio',
+    'Ecos do Abismo', 'Batalha Naval X', 'Cartas Lendárias', 'Bosque Encantado', 'Comando Delta', 'Puzzle do Relojoeiro', 'Ritmo Total',
+    'Sobrevivência Ártica', 'Império do Sol', 'Motoqueiros', 'Gato Ninja', 'Laboratório 9', 'Rei do Kart', 'Vikings do Norte', 'Horizonte Vermelho'];
+  const owned = new Set(['Fazenda Feliz', 'Futebol Total 26', 'Ecos do Abismo', 'Horizonte Vermelho']);
+  return names.map((name, i) => {
+    const discount = [10, 20, 25, 33, 40, 50, 60, 66, 75, 80, 85, 90][(i * 5) % 12];
+    const orig = [19.99, 29.99, 49.99, 59.99, 99.99, 129.9, 199.9, 249.9][(i * 3) % 8];
+    const fin = Math.round(orig * (100 - discount)) / 100;
+    return { appid: 3000 + i, name, image: capsuleArt(name, (i * 37) % 360), discount, originalPrice: Math.round(orig * 100), finalPrice: Math.round(fin * 100),
+      priceText: brl(fin), originalText: brl(orig), url: `https://store.steampowered.com/app/${3000 + i}/`, owned: owned.has(name) };
+  });
+}
+function epicSeed() {
+  const now = Date.now();
+  return [
+    { title: 'Crônicas do Vento', image: capsuleArt('Crônicas do Vento', 200), url: 'https://store.epicgames.com/p/cronicas', startDate: now - 2 * DAY, endDate: now + 5 * DAY, current: true },
+    { title: 'Mistério na Ilha', image: capsuleArt('Mistério na Ilha', 20), url: 'https://store.epicgames.com/p/misterio', startDate: now - 2 * DAY, endDate: now + 5 * DAY, current: true },
+    { title: 'Robôs em Fúria', image: capsuleArt('Robôs em Fúria', 280), url: 'https://store.epicgames.com/p/robos', startDate: now + 5 * DAY, endDate: now + 12 * DAY, current: false },
+  ];
+}
+
 export function createMockDash() {
   const params = new URLSearchParams(location.search);
   let games = params.has('empty') ? [] : seed();
@@ -89,6 +137,50 @@ export function createMockDash() {
   let settings = { autostart: false, fullscreen: true, sounds: true, startView: 'jogos', theme: 'metro' };
   try { Object.assign(settings, JSON.parse(localStorage.getItem('bladedash.mock.settings') || '{}')); } catch { /* sem storage */ }
   let customN = 1;
+
+  // v2: não instalados, downloads simulados, discos e ofertas
+  const v2 = { games: [], downloads: [] };
+  let uninstalled = params.has('empty') ? [] : uninstalledSeed();
+  let downloads = [];
+  const startDl = (u, state = 'downloading', progress = 0) => {
+    const total = Math.round((8 + (u.name.length % 9) * 6) * GB);
+    downloads.push({ id: u.id, name: u.name, cover: u.cover, state, progress, bytesDownloaded: Math.round(total * progress), bytesTotal: total, _u: u });
+  };
+  if (!params.has('empty') && !params.has('nodl')) {
+    const a = uninstalled.splice(5, 1)[0], b = uninstalled.splice(9, 1)[0];
+    startDl(a, 'downloading', 0.55);
+    startDl(b, 'queued', 0);
+  }
+  const pubDl = () => downloads.map(({ _u, ...d }) => ({ ...d }));
+  const emitDl = () => v2.downloads.forEach((cb) => cb(pubDl()));
+  setInterval(() => {
+    if (!downloads.length) return;
+    let d = downloads.find((x) => x.state === 'downloading');
+    if (!d) { downloads[0].state = 'downloading'; d = downloads[0]; }
+    d.progress = Math.min(1, d.progress + 0.06);
+    d.bytesDownloaded = Math.round(d.bytesTotal * d.progress);
+    if (d.progress >= 1) {
+      downloads = downloads.filter((x) => x !== d);
+      const u = d._u;
+      games.push({ id: u.id, source: 'steam', name: u.name, cover: u.cover, hero: u.hero, installDir: 'D:\\SteamLibrary\\' + u.name,
+        lastPlayed: null, playtimeMinutes: 0, favorite: false, hidden: false, addedAt: Date.now(), sizeBytes: d.bytesTotal, drive: 'D:' });
+      original.set(u.id, u.name);
+      emitDl();
+      setTimeout(() => listeners.games.forEach((cb) => cb(clone())), 400); // o jogo entra em getGames() logo depois
+    } else emitDl();
+  }, 1500);
+
+  const drives = () => {
+    const by = (dr) => games.filter((g) => g.drive === dr && g.sizeBytes).map((g) => ({ id: g.id, name: g.name, bytes: g.sizeBytes })).sort((a, b) => b.bytes - a.bytes);
+    const sum = (l) => l.reduce((t, x) => t + x.bytes, 0);
+    const c = by('C:'), d = by('D:');
+    return [
+      { drive: 'C:', label: 'Windows', total: 475 * GB, free: 120.4 * GB, gamesBytes: sum(c), games: c },
+      { drive: 'D:', label: 'Jogos', total: 931 * GB, free: 212.7 * GB, gamesBytes: sum(d), games: d },
+      { drive: 'E:', label: 'Externo', total: 1863 * GB, free: 1402 * GB, gamesBytes: 0, games: [] },
+    ];
+  };
+  let offersCache = null;
 
   // simula capa baixada em segundo plano
   setTimeout(() => {
@@ -151,6 +243,28 @@ export function createMockDash() {
     async getProfile() { return { name: 'Vitor' }; },
     onGameState(cb) { listeners.state.push(cb); },
     onGamesUpdated(cb) { listeners.games.push(cb); },
+    // ---- v2
+    async getUninstalled() { await wait(200); return uninstalled.map((u) => ({ ...u })); },
+    async install(id) {
+      await wait(300);
+      const i = uninstalled.findIndex((u) => u.id === id);
+      if (i < 0) return { ok: false, error: 'Jogo não encontrado na biblioteca Steam.' };
+      const [u] = uninstalled.splice(i, 1);
+      setTimeout(() => { startDl(u, downloads.length ? 'queued' : 'downloading', 0); emitDl(); v2.games.forEach((cb) => cb(uninstalled.map((x) => ({ ...x })))); }, 1200);
+      return { ok: true };
+    },
+    async getDownloads() { return pubDl(); },
+    async getStorage() { await wait(250); return drives(); },
+    async getOffers(force) {
+      if (params.has('offersfail')) { await wait(900); return { fetchedAt: null, currency: 'BRL', steam: [], epicFree: [], error: 'Sem conexão' }; }
+      await wait(force || !offersCache ? 1200 : 80);
+      if (!offersCache || force) offersCache = { fetchedAt: force ? Date.now() : Date.now() - 12 * MIN, currency: 'BRL', steam: offersSeed(), epicFree: epicSeed() };
+      if (params.has('offline')) return { ...offersCache, fetchedAt: Date.now() - 5 * HOUR, error: 'Sem conexão' };
+      return { ...offersCache };
+    },
+    async openStore(target) { console.info('[mock] openStore', target); return { ok: true }; },
+    onDownloads(cb) { v2.downloads.push(cb); },
+    onUninstalledUpdated(cb) { v2.games.push(cb); },
     minimize() { console.info('[mock] minimize'); },
     quit() { console.info('[mock] quit'); },
     toggleFullscreen() { console.info('[mock] toggleFullscreen'); },

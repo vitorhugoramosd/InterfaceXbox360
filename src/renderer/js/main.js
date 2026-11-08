@@ -15,7 +15,8 @@ import { toast } from './ui/toast.js';
 import { runBoot, skipBoot, booting } from './ui/boot.js';
 import { toggleGuide, rescan, currentTheme } from './ui/actions.js';
 import { MetroShell } from './metro/shell.js';
-import { createInicio, createJogosPivot, createRecentesPivot, createPlataformas, createConfig } from './metro/pivots.js';
+import { createInicio, createJogosPivot, createRecentesPivot, createPlataformas, createLoja, createConfig } from './metro/pivots.js';
+import { initExtras, downloadsSummary } from './extras.js';
 import { fillAvatar, timeFmt, dateFmt } from './ui/util.js';
 
 /* ------------------------------------------------ escala do palco 1920x1080 */
@@ -50,6 +51,7 @@ async function start() {
   await loadProfile;
   applyProfile();
   setGames(await loadGames);
+  initExtras(); // v2: não instalados, downloads (ofertas/discos carregam sob demanda)
 
   await bootDone;
   refreshHints();
@@ -71,7 +73,7 @@ function buildShell(theme) {
     const jogosPivot = createJogosPivot();
     const pivots = [];
     const nav = { go: (key) => { const i = pivots.findIndex((p) => p.key === key); if (i >= 0) shell.go(i); refreshHints(); } };
-    pivots.push(createInicio(nav), jogosPivot, createRecentesPivot(), createPlataformas(), createConfig());
+    pivots.push(createInicio(nav), jogosPivot, createRecentesPivot(), createPlataformas(), createLoja(), createConfig());
     shell = new MetroShell(root, pivots, () => refreshHints());
     app.goHome = () => nav.go('inicio');
     app.goSettings = () => nav.go('config');
@@ -187,6 +189,18 @@ dash.onGameState && dash.onGameState(({ id, running } = {}) => {
   renderRunning();
 });
 on('running', () => { renderRunning(); refreshHints(); });
+on('downloads', () => renderDownloads());
+on('uninstalled', () => refreshHints());
+
+/** Indicador no topo: "⬇ 2 downloads · 42%" */
+function renderDownloads() {
+  const el = document.getElementById('dl-ind');
+  const sum = downloadsSummary();
+  el.hidden = !sum;
+  if (!sum) return;
+  el.querySelector('.txt').textContent = `${sum.count} ${sum.count === 1 ? 'download' : 'downloads'} · ${Math.round(sum.progress * 100)}%`;
+  el.querySelector('.bar i').style.width = Math.round(sum.progress * 100) + '%';
+}
 on('settings', () => refreshHints());
 on('games', () => { renderRunning(); refreshHints(); });
 

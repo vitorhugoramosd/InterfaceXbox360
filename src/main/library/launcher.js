@@ -124,6 +124,26 @@ async function protocolRegistered(scheme) {
   return !!out;
 }
 
+/**
+ * Abre uma URI (steam://, uplay://, https://...) com o handler do Windows, sem passar pelo cmd
+ * (o "&" das URIs fica intacto). Nunca lança. { ok } | { ok:false, error }
+ */
+async function openUri(target) {
+  try {
+    const scheme = String(target).split(':')[0].toLowerCase();
+    if (!/^[a-z][a-z0-9+.-]*$/.test(scheme)) return { ok: false, error: 'Endereço inválido.' };
+    if (scheme !== 'http' && scheme !== 'https' && !(await protocolRegistered(scheme))) {
+      const app = SCHEME_NAMES[scheme] || scheme;
+      return { ok: false, error: `${app} não está instalado (ou não registrou o protocolo ${scheme}://).` };
+    }
+    const r = await spawnDetached('rundll32.exe', ['url.dll,FileProtocolHandler', String(target)], { windowsHide: true });
+    if (!r.ok) return { ok: false, error: 'Não foi possível abrir o endereço.' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: 'Não foi possível abrir o endereço.' };
+  }
+}
+
 class Launcher extends EventEmitter {
   constructor(store) {
     super();
@@ -146,12 +166,9 @@ class Launcher extends EventEmitter {
       if (!target) return { ok: false, error: 'Este jogo não tem um comando de inicialização.' };
       let r;
       if (l.type === 'uri') {
-        const scheme = String(target).split(':')[0].toLowerCase();
-        if (!(await protocolRegistered(scheme))) {
-          const app = SCHEME_NAMES[scheme] || scheme;
-          return { ok: false, error: `${app} não está instalado (ou não registrou o protocolo ${scheme}://).` };
-        }
-        r = await spawnDetached('rundll32.exe', ['url.dll,FileProtocolHandler', target], { windowsHide: true });
+        const o = await openUri(target);
+        if (!o.ok) return o;
+        r = { ok: true };
       } else if (l.type === 'appx') {
         r = await spawnDetached('explorer.exe', [target], { windowsHide: true });
       } else {
@@ -241,4 +258,4 @@ class Launcher extends EventEmitter {
   }
 }
 
-module.exports = { Launcher, ProcWatcher };
+module.exports = { Launcher, ProcWatcher, openUri };
