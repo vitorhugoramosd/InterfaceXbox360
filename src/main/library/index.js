@@ -131,6 +131,9 @@ async function doScan() {
   const out = [];
   for (const r of all) {
     r.id = idOf(r);
+    // Ubisoft/EA às vezes mantêm no registro jogos já removidos: com o disco conectado e a pasta
+    // inexistente, o jogo não está instalado. (Disco desconectado -> continua, marcado offline.)
+    if ((r.source === 'ubisoft' || r.source === 'ea') && r.installDir && driveOnline(r.installDir) && !fs.existsSync(r.installDir)) continue;
     const nn = u.normalizeName(r.name);
     const d = u.normPath(r.installDir);
     if (r.source !== 'steam') {
