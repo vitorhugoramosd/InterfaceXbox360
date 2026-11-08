@@ -35,6 +35,14 @@ const scanners = {
   ea: require('./scanners/ea'),
 };
 const customScanner = require('./scanners/custom');
+const foldersScanner = require('./scanners/folders');
+
+/** O disco (letra) do caminho está conectado? */
+function driveOnline(p) {
+  const m = /^([a-z]):/i.exec(String(p || ''));
+  if (!m) return true;
+  try { return fs.existsSync(m[1].toUpperCase() + ':\\'); } catch { return false; }
+}
 
 const SOURCE_ORDER = ['steam', 'epic', 'ubisoft', 'xbox', 'ea']; // prioridade na deduplicação
 const STALE_MS = 10 * 60 * 1000;
@@ -66,7 +74,7 @@ function toGame(raw) {
   return {
     id: raw.id,
     source: raw.source,
-    name: (ov.customName && String(ov.customName).trim()) || raw.name,
+    name: (ov.customName && String(ov.customName).trim()) || (raw.auto && covers.officialName(raw.id)) || raw.name,
     cover: art.cover,
     hero: art.hero,
     installDir: raw.installDir || null,
@@ -78,6 +86,8 @@ function toGame(raw) {
     running: launcher ? launcher.isRunning(raw.id) : false,
     sizeBytes: storage ? storage.sizeOf(raw) : raw.sizeBytes || null,
     drive: storage ? storage.driveOf(raw) : null,
+    offline: !!raw.offline || (raw.installDir ? !driveOnline(raw.installDir) : false),
+    auto: !!raw.auto,
   };
 }
 
@@ -135,8 +145,35 @@ async function doScan() {
   }
   for (const r of customScanner.scan(store.data.custom)) {
     r.id = idOf(r);
+    if (r.installDir) dirs.add(u.normPath(r.installDir));
     out.push(r);
   }
+  // Jogos soltos em <disco>:\Games e <disco>:\Jogos (instalados por fora de launchers).
+  let loose = [];
+  try { loose = foldersScanner.scan(); } catch {}
+  const knownDirs = [...dirs, ...steamLibs.map(u.normPath)];
+  for (const r of loose) {
+    r.id = idOf(r);
+    const d = u.normPath(r.installDir);
+    // já coberto por outro launcher/jogo manual (mesma pasta, pasta dentro ou contendo um jogo conhecido)
+    if (knownDirs.some((k) => k && (u.isUnder(d, k) || u.isUnder(k, d)))) continue;
+    if (names.has(u.normalizeName(r.name))) continue;
+    if (out.some((x) => x.id === r.id)) continue;
+    out.push(r);
+  }
+
+  // HD removível: jogos que já conhecíamos e cujo disco está desconectado continuam na lista,
+  // marcados como offline, e voltam ao normal sozinhos quando o disco reaparece.
+  // Pacotes Xbox de disco externo também somem do Windows até o disco voltar: mantém se a pasta existe.
+  for (const p of prev) {
+    if (out.some((x) => x.id === p.id)) continue;
+    if (!p.installDir) continue;
+    const offline = !driveOnline(p.installDir);
+    const xboxStillThere = p.source === 'xbox' && !offline && fs.existsSync(p.installDir);
+    if (offline || xboxStillThere) out.push({ ...p, offline });
+  }
+  for (const r of out) if (r.offline && r.installDir && driveOnline(r.installDir) && fs.existsSync(r.installDir)) r.offline = false;
+  for (const r of out) if (r.source === 'custom' && !r.auto && r.installDir) r.offline = !driveOnline(r.installDir);
 
   const now = Date.now();
   for (const r of out) {
@@ -225,6 +262,7 @@ lib.init = function init({ dataDir } = {}) {
     try {
       await steamLib.init();
     } catch {}
+    startDriveWatch();
   })();
   return initPromise;
 };
@@ -261,6 +299,10 @@ lib.launch = async function launch(id) {
     ensureInit();
     const raw = findRaw(id);
     if (!raw) return { ok: false, error: 'Jogo não encontrado na biblioteca.' };
+    if (raw.installDir && !driveOnline(raw.installDir)) {
+      const d = /^([a-z]:)/i.exec(raw.installDir)[1].toUpperCase();
+      return { ok: false, error: `O HD ${d} não está conectado. Conecte o HD para jogar ${raw.name}.` };
+    }
     return await launcher.launch(raw);
   } catch (e) {
     return { ok: false, error: 'Erro ao iniciar o jogo: ' + (e && e.message ? e.message : e) };
@@ -324,6 +366,14 @@ lib.addCustomGame = async function addCustomGame({ name, exePath, args } = {}) {
 
 lib.removeCustomGame = async function removeCustomGame(id) {
   ensureInit();
+  // Jogo achado automaticamente numa pasta Games/Jogos: "remover" = ocultar (senão volta no próximo scan).
+  const raw = findRaw(id);
+  if (raw && raw.auto) {
+    store.override(id); // garante o objeto
+    store.data.overrides[id] = { ...(store.data.overrides[id] || {}), hidden: true };
+    await store.save();
+    return;
+  }
   store.data.custom = store.data.custom.filter((c) => c.id !== id);
   store.data.cache = store.data.cache.filter((r) => r.id !== id);
   const ov = store.data.overrides[id];
@@ -423,7 +473,26 @@ lib.openStore = async function openStore(target) {
 /** Para testes: espera os downloads de capa pendentes. */
 lib._coversIdle = () => (covers ? covers.whenIdle() : Promise.resolve());
 lib._sizingBusy = () => !!(storage && storage.sizing);
+// HD removível: a cada 8 s confere quais discos estão conectados; mudou -> reescaneia sozinho.
+let driveTimer = null;
+let lastDrives = null;
+function startDriveWatch() {
+  if (driveTimer) return;
+  lastDrives = foldersScanner.driveRoots().join(',');
+  driveTimer = setInterval(async () => {
+    const now = foldersScanner.driveRoots().join(',');
+    if (now === lastDrives) return;
+    lastDrives = now;
+    try {
+      await lib.rescan();
+      emitGames();
+    } catch {}
+  }, 8000);
+  if (driveTimer.unref) driveTimer.unref();
+}
+
 lib._dispose = () => {
+  if (driveTimer) clearInterval(driveTimer);
   if (launcher) launcher.dispose();
   if (steamLib) steamLib.dispose();
 };

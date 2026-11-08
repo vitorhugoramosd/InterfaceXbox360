@@ -280,3 +280,11 @@ body.theme-metro .dl-ind .bar i { background: var(--m-g2); }
 .md-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-row b { font-weight: 400; white-space: nowrap; opacity: .85; }
 .md-row.empty { opacity: .6; }
+
+/* Jogo de HD removível desconectado */
+body.theme-metro .mt-cover.offline > :not(.mt-offline):not(.mt-label):not(.mt-grad),
+body.theme-metro .mt-image.offline > :not(.mt-offline):not(.mt-label):not(.mt-grad) { filter: grayscale(1) brightness(.55); }
+body.theme-metro .mt-offline {
+  position: absolute; top: 10px; left: 10px; z-index: 3; padding: 3px 8px;
+  background: rgba(30, 30, 30, .85); color: #fff; font-size: 15px; letter-spacing: .2px;
+}

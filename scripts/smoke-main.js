@@ -41,6 +41,9 @@ async function run(win) {
   for (const n of names) { await key(win, 'E'); await wait(900); await shot(win, n); }
   await key(win, 'X');
   await shot(win, '9-opcoes');
+  if (process.env.SMOKE_EVAL) {
+    console.log('eval:', await win.webContents.executeJavaScript(process.env.SMOKE_EVAL));
+  }
   const n = await win.webContents.executeJavaScript('document.querySelectorAll("img").length');
   console.log('imgs no DOM:', n);
   console.log('erros no console:', errors.length ? errors : 'nenhum');

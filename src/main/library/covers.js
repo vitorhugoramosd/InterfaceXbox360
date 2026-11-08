@@ -136,11 +136,22 @@ class Covers {
     try {
       this.failures = JSON.parse(fs.readFileSync(this.failFile, 'utf8')) || {};
     } catch {}
+    // Nome oficial (Steam) achado para jogos detectados em pastas (auto): key -> nome
+    this.namesFile = path.join(this.dir, 'names.json');
+    this.names = {};
+    try {
+      this.names = JSON.parse(fs.readFileSync(this.namesFile, 'utf8')) || {};
+    } catch {}
     this.inflight = new Set();
     this.assetCache = new Map(); // appid -> Promise<{cover:[], hero:[]}>
     this.running = 0;
     this.idleWaiters = [];
     this._emitTimer = null;
+  }
+
+  /** Nome oficial encontrado na Steam para um jogo achado em pasta (ou null). */
+  officialName(id) {
+    return this.names[keyOf(id)] || null;
   }
 
   // ---------- resolução síncrona ----------
@@ -272,6 +283,12 @@ class Covers {
         return false;
       }
       appid = r.appid;
+      if (appid && raw.auto && r.matched && r.score >= 0.75) {
+        this.names[key] = u.cleanName(String(r.matched).replace(/’/g, "'"));
+        try {
+          fs.writeFileSync(this.namesFile, JSON.stringify(this.names));
+        } catch {}
+      }
       if (!appid) {
         if (need.cover) this.markFailed(key + ':cover');
         if (need.hero) this.markFailed(key + ':hero');

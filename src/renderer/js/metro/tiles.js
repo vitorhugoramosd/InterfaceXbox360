@@ -67,9 +67,10 @@ export function artLayer(g, wide = true) {
 
 /** Bloco com imagem (hero) + rótulo sobre gradiente escuro */
 export function imageTile(g, { label, sub, wide = true } = {}) {
-  return h('div', { class: 'mt-image' },
+  return h('div', { class: 'mt-image' + (g && g.offline ? ' offline' : '') },
     artLayer(g, wide),
     h('div', { class: 'mt-grad' }),
+    g && g.offline ? offlineTag(g) : null,
     g && g.favorite ? h('div', { class: 'mt-star', text: '★' }) : null,
     g && state.running === g.id ? h('div', { class: 'mt-run', text: 'em jogo' }) : null,
     g ? dlBar(g.id) : null,
@@ -89,8 +90,9 @@ export function dlBar(id, { detail = false } = {}) {
 
 /** Bloco de capa (retrato) — nome aparece só com foco. uninst: não instalado (esmaecido + seta) */
 export function coverTile(g, lazy, { uninst = false } = {}) {
-  return h('div', { class: 'mt-cover' + (uninst ? ' uninst' : '') },
+  return h('div', { class: 'mt-cover' + (uninst ? ' uninst' : '') + (g.offline ? ' offline' : '') },
     createCover(g, { lazy }),
+    g.offline ? offlineTag(g) : null,
     uninst ? h('div', { class: 'mt-dlbadge' }, micon('download')) : null,
     dlBar(g.id),
     g.favorite ? h('div', { class: 'mt-star', text: '★' }) : null,
@@ -99,9 +101,14 @@ export function coverTile(g, lazy, { uninst = false } = {}) {
     h('div', { class: 'mt-label' }, h('div', { class: 'mt-name', text: g.name })));
 }
 
+/** Etiqueta "HD desconectado" (jogo de disco removível que não está conectado) */
+export function offlineTag(g) {
+  return h('div', { class: 'mt-offline', text: `HD ${g.drive || ''} desconectado`.replace('  ', ' ') });
+}
+
 /** Assinatura de um jogo para reaproveitar o elemento quando nada mudou */
 export const gameSig = (g) => {
   if (!g) return 'none';
   const d = downloadFor(g.id);
-  return [g.id, g.name, g.cover, g.hero, g.favorite, state.running === g.id, g.lastPlayed, g.playtimeMinutes, d ? d.state + Math.round(d.progress * 100) : ''].join('~');
+  return [g.id, g.name, g.cover, g.hero, g.favorite, state.running === g.id, g.lastPlayed, g.playtimeMinutes, g.offline, d ? d.state + Math.round(d.progress * 100) : ''].join('~');
 };

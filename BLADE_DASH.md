@@ -64,6 +64,8 @@ Hoje o **Blade Dash abre sozinho quando o Windows liga**. Se o Jarvis passar a s
   - **EA app:** chaves de desinstalação do registro (jogos que também estão na Steam ficam só como Steam).
   - **Xbox / Microsoft Store:** pacotes Appx com `MicrosoftGame.config` (via PowerShell).
   - **Personalizado:** qualquer .exe/.lnk/.bat/.url adicionado em "Adicionar Jogo".
+  - **Pastas de jogos soltos:** toda subpasta de `<disco>:\Games` e `<disco>:\Jogos` (ex.: `D:\Jogos\Marvels SpiderMan Remastered`) vira um jogo; o executável é o maior `.exe` até 2 níveis abaixo (ignora instaladores/redistribuíveis). O nome oficial vem da busca na Steam. Pastas já cobertas por um launcher não duplicam.
+- **HD removível (o D: é externo):** jogos de um disco desconectado continuam na lista, apagados com a marca "HD D: desconectado", e não abrem (mensagem pedindo para conectar). O app confere os discos a cada 8 s e **reescaneia sozinho** quando um disco é conectado ou removido.
 - **Capas e imagens de fundo automáticas:** cache local da Steam → CDN da Steam → busca por nome na loja da Steam (para jogos de outras lojas e personalizados) → logo do pacote (Xbox) → capa gerada (gradiente + nome). Baixa em segundo plano, 4 por vez; falhas só são tentadas de novo após 24 h. Capa pode ser trocada manualmente.
 - **Lançar jogos:** Steam `steam://rungameid/<id>`, Epic `com.epicgames.launcher://apps/...?action=launch&silent=true`, Ubisoft `uplay://launch/<id>/0`, Xbox `explorer.exe shell:AppsFolder\<PFN>!<AppId>`, personalizados executando o arquivo.
 - **Detecta quando o jogo está rodando** (processo dentro da pasta do jogo, checagem a cada 3 s): minimiza o dashboard, conta **tempo de jogo**, grava **jogado por último** e restaura a janela quando o jogo fecha.

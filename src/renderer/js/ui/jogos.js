@@ -201,7 +201,8 @@ export function createJogos() {
     put(featBadges, 
       h('span', { class: 'badge ' + g.source, text: sourceLabel(g.source) }),
       g.favorite ? h('span', { class: 'badge fav', text: '★ Favorito' }) : null,
-      state.running === g.id ? h('span', { class: 'badge run', text: '● Em jogo' }) : null);
+      state.running === g.id ? h('span', { class: 'badge run', text: '● Em jogo' }) : null,
+      g.offline ? h('span', { class: 'badge custom', text: `HD ${g.drive || ''} desconectado` }) : null);
     const un = listKey === 'uninst';
     featCta.children[1].textContent = un ? 'Baixar' : 'Jogar';
     for (const i of [2, 3, 4]) featCta.children[i].style.display = un ? 'none' : '';
