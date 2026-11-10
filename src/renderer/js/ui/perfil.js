@@ -1,9 +1,10 @@
 // Blade "perfil": cartão de jogador, estatísticas, relógio, mais jogado.
-import { h, fmtNum, hours, playtime, relTime, sourceLabel, fillAvatar, SOURCES } from './util.js';
+import { h, put, fmtNum, hours, playtime, relTime, sourceLabel, fillAvatar, SOURCES } from './util.js';
 import { createCover } from './cover.js';
 import { state, on } from '../store.js';
 import { sfx } from '../sound.js';
 import { launchGame, openGameOptions } from './actions.js';
+import { wrappedCaps, unseenWrapped, openWrappedPicker, openWrapped, wrappedCallout } from '../wrapped.js';
 
 export function createPerfil() {
   let cards = [], targets = [], idx = 0;
@@ -58,7 +59,19 @@ export function createPerfil() {
         h('div', {}, h('div', { class: 'pk', text: k }), h('div', { class: 'pn', text: g.name }), h('div', { class: 'pm', text: meta })));
     };
     cards = [];
-    cardsEl.replaceChildren(
+    // Gaming Wrapped (v3) — primeiro cartão quando o backend suporta
+    let wcard = null;
+    if (wrappedCaps()) {
+      const nw = unseenWrapped();
+      const i = targets.length;
+      targets.push({ wrapped: true, key: nw ? nw.key : null });
+      wcard = h('div', { class: 'pcard wrapped-card', dataset: { nav: 'pcard', i } }, h('div', { class: 'wc-ico' }),
+        h('div', {}, h('div', { class: 'pk', text: nw ? 'Novo!' : 'Retrospectiva' }),
+          h('div', { class: 'pn', text: nw ? `Seu Gaming Wrapped ${wrappedCallout(nw)} chegou!` : 'Gaming Wrapped' }),
+          h('div', { class: 'pm', text: 'Seu resumo do mês e do ano em stories' })));
+    }
+    put(cardsEl,
+      wcard,
       card('Mais jogado', most, most ? playtime(most.playtimeMinutes) : ''),
       card('Último jogado', last, last ? (state.running === last.id ? 'Em jogo agora' : 'Jogado ' + relTime(last.lastPlayed)) : ''));
     cards = [...cardsEl.querySelectorAll('.pcard[data-nav]')];
@@ -71,8 +84,8 @@ export function createPerfil() {
     switch (a) {
       case 'up': if (idx > 0) { idx--; sfx.move(); paint(); } return true;
       case 'down': if (idx < cards.length - 1) { idx++; sfx.move(); paint(); } return true;
-      case 'a': if (targets[idx]) launchGame(targets[idx]); return !!targets[idx];
-      case 'x': case 'start': if (targets[idx]) openGameOptions(targets[idx]); return !!targets[idx];
+      case 'a': if (targets[idx]) activate(targets[idx]); return !!targets[idx];
+      case 'x': case 'start': if (targets[idx] && !targets[idx].wrapped) openGameOptions(targets[idx]); return !!targets[idx];
       default: return false;
     }
   }
@@ -82,10 +95,16 @@ export function createPerfil() {
     if (!c) return;
     const i = +c.dataset.i;
     if (i !== idx) { idx = i; sfx.move(); paint(); }
-    if (type === 'click') launchGame(targets[i]);
+    if (type === 'click') activate(targets[i]);
+  }
+
+  function activate(t) {
+    if (t.wrapped) { sfx.select(); if (t.key) openWrapped(t.key); else openWrappedPicker(); }
+    else launchGame(t);
   }
 
   on('games', render);
+  on('wrapped', render);
   on('profile', render);
   on('running', render);
   render();

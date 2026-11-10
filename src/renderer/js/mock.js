@@ -126,6 +126,75 @@ function epicSeed() {
   ];
 }
 
+/* ------------------------------------------------------------------ v3 */
+const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const WDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+/** PRNG determinístico por chave (dados estáveis entre chamadas) */
+function rng(seed) {
+  let x = 0;
+  for (const c of seed) x = (x * 31 + c.charCodeAt(0)) >>> 0;
+  return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; };
+}
+const PERSONAS = [
+  { key: 'corujao', title: 'Corujão', desc: 'Quando o mundo dorme, você aperta start. Suas melhores partidas acontecem depois da meia-noite.' },
+  { key: 'maratonista', title: 'Maratonista', desc: 'Sessões longas, foco total. Pra você, "só mais uma" dura umas três horas.' },
+  { key: 'fiel', title: 'Fiel ao Jogo', desc: 'Achou um jogo e casou com ele. Quase todo o seu tempo foi para um título só.' },
+  { key: 'explorador', title: 'Explorador', desc: 'Você pula de mundo em mundo. Muitos jogos diferentes, sempre atrás da próxima novidade.' },
+  { key: 'fim-de-semana', title: 'Guerreiro de Fim de Semana', desc: 'Durante a semana a vida chama; no sábado e domingo, o controle é seu.' },
+];
+
+function buildWrapped(key, games, now) {
+  const isYear = !key.includes('-');
+  const year = +key.slice(0, 4), month = isYear ? null : +key.slice(5) - 1;
+  const from = isYear ? new Date(year, 0, 1).getTime() : new Date(year, month, 1).getTime();
+  const to = isYear ? new Date(year + 1, 0, 1).getTime() : new Date(year, month + 1, 1).getTime();
+  const r = rng(key);
+  // base estável (ignora jogos que entram depois via download) para os números não mudarem
+  const pool = games.filter((g) => !g.hidden && !/^steam:20\d\d$/.test(g.id)).sort((a, b) => (a.id < b.id ? -1 : 1));
+  const pick = [...pool].sort(() => r() - 0.5).slice(0, 5);
+  // período parcial: proporcional ao que já passou
+  const frac = Math.min(1, Math.max(0.15, (Math.min(now, to) - from) / (to - from)));
+  const scale = (isYear ? 9 : 1) * frac;
+  const top = pick.map((g, i) => ({ g, minutes: Math.round((900 - i * 170 + r() * 120) * scale) }));
+  // jogo nº 1 bem à frente às vezes
+  if (r() > 0.4) top[0].minutes = Math.round(top[0].minutes * 1.8);
+  top.sort((a, b) => b.minutes - a.minutes);
+  const total = top.reduce((t, x) => t + x.minutes, 0);
+  const topGames = top.map(({ g, minutes }) => ({ id: g.id, name: g.name, cover: g.cover, hero: g.hero, source: g.source, minutes, sessions: Math.max(1, Math.round(minutes / (70 + r() * 60))), share: minutes / total }));
+  const hours = Array.from({ length: 24 }, (_, h) => {
+    const night = h >= 20 || h <= 2 ? 3.2 : h >= 14 && h < 20 ? 1.6 : h >= 3 && h <= 9 ? 0.15 : 0.7;
+    return night * (0.6 + r());
+  });
+  const hs = hours.reduce((a, b) => a + b, 0);
+  const hourHistogram = hours.map((v) => Math.round(v / hs * total));
+  const favHour = hourHistogram.indexOf(Math.max(...hourHistogram));
+  const wd = [1.6, 0.6, 0.7, 0.8, 0.9, 1.3, 2.2].map((v) => v * (0.7 + r() * 0.6));
+  const ws = wd.reduce((a, b) => a + b, 0);
+  const weekdayHistogram = wd.map((v) => Math.round(v / ws * total));
+  const favDay = weekdayHistogram.indexOf(Math.max(...weekdayHistogram));
+  const lsGame = topGames[Math.floor(r() * 2)];
+  const lsStart = from + Math.floor(r() * Math.max(1, Math.min(to, now) - from - DAY));
+  const lsMin = Math.round(180 + r() * 220);
+  const d0 = new Date(lsStart); d0.setHours(22, 10, 0, 0);
+  const sessions = topGames.reduce((t, x) => t + x.sessions, 0);
+  const persona = PERSONAS[Math.floor(r() * PERSONAS.length)];
+  const prevLabel = isYear ? String(year - 1) : `${MONTHS[(month + 11) % 12]} de ${month ? year : year - 1}`;
+  return {
+    key, period: isYear ? 'year' : 'month', label: isYear ? String(year) : `${MONTHS[month]} de ${year}`, from, to, complete: to <= now, hasData: true,
+    totalMinutes: total, sessions, daysPlayed: Math.min(isYear ? 220 : 28, Math.round(sessions * 0.7)), gamesPlayed: topGames.length + Math.floor(r() * 4),
+    topGames,
+    longestSession: { id: lsGame.id, name: lsGame.name, cover: lsGame.cover, hero: lsGame.hero, minutes: lsMin, start: d0.getTime(), end: d0.getTime() + lsMin * MIN },
+    favoriteHour: { hour: favHour, minutes: hourHistogram[favHour] }, hourHistogram,
+    favoriteWeekday: { day: favDay, label: WDAYS[favDay], minutes: weekdayHistogram[favDay] }, weekdayHistogram,
+    longestStreakDays: 3 + Math.floor(r() * 9),
+    busiestDay: { date: new Date(lsStart).setHours(0, 0, 0, 0), minutes: Math.round(lsMin * 1.3) },
+    lateNightMinutes: hourHistogram.slice(0, 5).reduce((a, b) => a + b, 0),
+    newGames: topGames.slice(2, 2 + 1 + Math.floor(r() * 3)).map(({ id, name, cover }) => ({ id, name, cover })),
+    previous: isYear ? null : { label: prevLabel, totalMinutes: Math.round(total / (1 + (r() - 0.3))), deltaPct: Math.round((r() - 0.3) * 80) },
+    personality: persona,
+  };
+}
+
 export function createMockDash() {
   const params = new URLSearchParams(location.search);
   let games = params.has('empty') ? [] : seed();
@@ -182,6 +251,22 @@ export function createMockDash() {
   };
   let offersCache = null;
 
+  // v3: Gaming Wrapped — mês atual (parcial), mês anterior (completo, não visto), ano atual
+  const wrappedSeen = new Set(['2026-09']);
+  const wrappedKeys = () => {
+    const d = new Date();
+    const y = d.getFullYear(), m = d.getMonth();
+    const k = (yy, mm) => `${yy}-${String(mm + 1).padStart(2, '0')}`;
+    const prev = m ? [y, m - 1] : [y - 1, 11], prev2 = m > 1 ? [y, m - 2] : [y - 1, 10 + m];
+    // como o backend: mais recente primeiro, cada ano depois dos seus meses
+    const months = [k(y, m), k(...prev), k(...prev2)];
+    const out = [];
+    for (const mk of months) { if (out.length && out[out.length - 1].length > 4 && out[out.length - 1].slice(0, 4) !== mk.slice(0, 4)) out.push(out[out.length - 1].slice(0, 4)); out.push(mk); }
+    out.push(months[months.length - 1].slice(0, 4));
+    return out;
+  };
+  const sessionCbs = [];
+
   // simula capa baixada em segundo plano
   setTimeout(() => {
     const g = games.find((x) => x.id === 'steam:1002');
@@ -206,6 +291,7 @@ export function createMockDash() {
         g.lastPlayed = Date.now();
         g.playtimeMinutes += 3;
         listeners.state.forEach((cb) => cb({ id, running: false }));
+        sessionCbs.forEach((cb) => cb());
       }, 12000);
       return { ok: true };
     },
@@ -265,6 +351,23 @@ export function createMockDash() {
     async openStore(target) { console.info('[mock] openStore', target); return { ok: true }; },
     onDownloads(cb) { v2.downloads.push(cb); },
     onUninstalledUpdated(cb) { v2.games.push(cb); },
+    // ---- v3
+    async getWrappedPeriods() {
+      await wait(150);
+      if (params.has('wrappedempty')) return [];
+      const now = Date.now();
+      return wrappedKeys().map((key) => {
+        const w = buildWrapped(key, games, now);
+        return { key, period: w.period, year: +key.slice(0, 4), month: w.period === 'month' ? +key.slice(5) : undefined, label: w.label, minutes: w.totalMinutes, complete: w.complete, seen: wrappedSeen.has(key) };
+      });
+    },
+    async getWrapped(key) {
+      await wait(400);
+      if (params.has('wrappedempty') || !wrappedKeys().includes(key)) return { hasData: false, label: key };
+      return buildWrapped(key, games, Date.now());
+    },
+    async markWrappedSeen(key) { wrappedSeen.add(key); return { ok: true }; },
+    onSessionsUpdated(cb) { sessionCbs.push(cb); },
     minimize() { console.info('[mock] minimize'); },
     quit() { console.info('[mock] quit'); },
     toggleFullscreen() { console.info('[mock] toggleFullscreen'); },

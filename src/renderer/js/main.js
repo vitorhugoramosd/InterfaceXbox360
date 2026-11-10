@@ -17,6 +17,7 @@ import { toggleGuide, rescan, currentTheme } from './ui/actions.js';
 import { MetroShell } from './metro/shell.js';
 import { createInicio, createJogosPivot, createRecentesPivot, createPlataformas, createLoja, createConfig } from './metro/pivots.js';
 import { initExtras, downloadsSummary } from './extras.js';
+import { initWrapped } from './wrapped.js';
 import { fillAvatar, timeFmt, dateFmt } from './ui/util.js';
 
 /* ------------------------------------------------ escala do palco 1920x1080 */
@@ -52,6 +53,7 @@ async function start() {
   applyProfile();
   setGames(await loadGames);
   initExtras(); // v2: não instalados, downloads (ofertas/discos carregam sob demanda)
+  initWrapped(); // v3: períodos do Gaming Wrapped
 
   await bootDone;
   refreshHints();

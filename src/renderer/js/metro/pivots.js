@@ -8,6 +8,7 @@ import { dash, has } from '../api.js';
 import { sfx } from '../sound.js';
 import { toast } from '../ui/toast.js';
 import { TilePage, AREA_H, GAP } from './page.js';
+import { wrappedCaps, unseenWrapped, openWrapped, loadWrappedPeriods, wrappedCallout, hm } from '../wrapped.js';
 import { solidTile, imageTile, coverTile, artLayer, gameSig, micon, dlBar } from './tiles.js';
 
 const G1 = '#107c10';   // verde escuro
@@ -131,8 +132,18 @@ export function createInicio(nav) {
     } else if (state.loading) specs.push({ ...loadingTile(xC, 0, C * 2 + GAP, RH * 2 + GAP), key: 'feat' });
     else specs.push({ key: 'feat', x: xC, y: 0, w: C * 2 + GAP, h: RH * 2 + GAP, color: G2, sig: 'feat-empty', render: () => solidTile({ icon: 'plus', label: 'Adicione seus jogos', sub: 'Nenhum jogo encontrado. Pressione A para adicionar um jogo.' }), a: () => { sfx.select(); addGame(); } });
     // dois largos embaixo
+    const wNew = unseenWrapped();
     [[w1, xC], [w2, xC2]].forEach(([g, x], i) => {
       const key = 'w' + i;
+      if (i === 0 && wNew) {
+        specs.push({ key: 'wrapped', x, y: 2 * (RH + GAP), w: C, h: RH, sig: 'wr' + wNew.key,
+          render: () => h('div', { class: 'mt-wrapped' },
+            h('div', { class: 'mw-k' }, h('span', { class: 'wv-dot' }), 'Gaming Wrapped'),
+            h('div', { class: 'mw-new', text: 'novo' }),
+            h('div', { class: 'mw-t' }, `Seu Gaming Wrapped ${wrappedCallout(wNew)} chegou!`, h('div', { class: 'mw-sub', text: `${hm(wNew.minutes)} de jogatina · pressione A` }))),
+          a: () => { sfx.select(); openWrapped(wNew.key); }, hints: [['a', 'Ver retrospectiva']] });
+        return;
+      }
       if (g) specs.push({ key, x, y: 2 * (RH + GAP), w: C, h: RH, sig: key + gameSig(g), render: () => imageTile(g, { sub: g.lastPlayed ? 'Jogado ' + relTime(g.lastPlayed) : sourceLabel(g.source) }), ...gameActions(g) });
       else specs.push({ key, x, y: 2 * (RH + GAP), w: C, h: RH, color: GRAY, sig: key + 'plat', render: () => solidTile({ icon: i ? 'screen' : 'grid', label: i ? 'Plataformas' : 'Todos os jogos', iconPos: 'left' }), a: () => nav.go(i ? 'plataformas' : 'jogos') });
     });
@@ -171,7 +182,7 @@ export function createInicio(nav) {
     page.setTiles(specs);
   }
 
-  on('games', build); on('running', build); on('loading', build); on('downloads', build);
+  on('games', build); on('running', build); on('loading', build); on('downloads', build); on('wrapped', build);
   build();
   page.focusKey = 'feat';
   return page;
@@ -226,18 +237,58 @@ export function createJogosPivot() {
 export function createRecentesPivot() {
   const page = new TilePage({ key: 'recentes', title: 'recentes' });
   const TH = Math.floor((AREA_H - GAP) / 2), TW = 560;
+  let sub = null;
   function build() {
+    if (sub === 'wrapped') return buildPicker();
+    page.setHeader('');
+    page.onBack = null;
     const rec = byRecent(visibleGames()).slice(0, 12);
-    const specs = rec.map((g, i) => ({
-      key: 'r:' + g.id, x: Math.floor(i / 2) * (TW + GAP), y: (i % 2) * (TH + GAP), w: TW, h: TH,
-      sig: 'r' + gameSig(g),
-      render: () => imageTile(g, { sub: (state.running === g.id ? 'Em jogo agora' : 'Jogado ' + relTime(g.lastPlayed)) + ' · ' + playtime(g.playtimeMinutes) }),
-      ...gameActions(g),
-    }));
-    if (!specs.length) specs.push({ key: 'none', x: 0, y: 0, w: TW, h: TH, color: GRAY, sig: 'none', render: () => solidTile({ icon: 'clock', label: 'Nada jogado ainda', sub: 'Os jogos que você abrir pelo dashboard aparecem aqui.' }) });
+    const specs = [];
+    const off = wrappedCaps() ? 1 : 0;
+    if (off) {
+      const nw = unseenWrapped();
+      specs.push({ key: 'wrapped', x: 0, y: 0, w: TW, h: TH, sig: 'wrp' + (nw ? nw.key : '') + state.wrappedPeriods.length,
+        render: () => h('div', { class: 'mt-wrapped calm' },
+          h('div', { class: 'mw-k' }, h('span', { class: 'wv-dot' }), 'retrospectiva'),
+          nw ? h('div', { class: 'mw-new', text: 'novo' }) : null,
+          h('div', { class: 'mw-t' }, 'Gaming Wrapped', h('div', { class: 'mw-sub', text: state.wrappedPeriods.length ? 'Seu resumo do mês e do ano em stories' : 'Jogue um pouco e volte aqui' }))),
+        a: () => { sfx.select(); sub = 'wrapped'; page.focusKey = null; loadWrappedPeriods(); build(); }, hints: [['a', 'Abrir']] });
+    }
+    rec.forEach((g, j) => {
+      const i = j + off;
+      specs.push({
+        key: 'r:' + g.id, x: Math.floor(i / 2) * (TW + GAP), y: (i % 2) * (TH + GAP), w: TW, h: TH,
+        sig: 'r' + gameSig(g),
+        render: () => imageTile(g, { sub: (state.running === g.id ? 'Em jogo agora' : 'Jogado ' + relTime(g.lastPlayed)) + ' · ' + playtime(g.playtimeMinutes) }),
+        ...gameActions(g),
+      });
+    });
+    if (!rec.length) specs.push({ key: 'none', x: off ? 0 : 0, y: off ? TH + GAP : 0, w: TW, h: TH, color: GRAY, sig: 'none', render: () => solidTile({ icon: 'clock', label: 'Nada jogado ainda', sub: 'Os jogos que você abrir pelo dashboard aparecem aqui.' }) });
+    // primeiro foco: o jogo mais recente (o Wrapped fica logo acima/ao lado)
+    if (!page.active && rec.length && (!page.focusKey || page.focusKey === 'wrapped')) page.focusKey = 'r:' + rec[0].id;
     page.setTiles(specs);
   }
-  on('games', build); on('running', build); on('downloads', build);
+  function buildPicker() {
+    page.setHeader('gaming wrapped');
+    page.onBack = () => { sub = null; page.focusKey = 'wrapped'; build(); };
+    const list = state.wrappedPeriods;
+    const T = Math.floor((AREA_H - 64 - GAP) / 2);
+    if (!list.length) {
+      page.setTiles([{ key: 'none', x: 0, y: 64, w: TW, h: T, color: GRAY, sig: 'nowr',
+        render: () => solidTile({ icon: 'clock', label: 'Nenhuma retrospectiva ainda', sub: 'Jogue um pouco e volte aqui — o Blade Dash registra seu tempo de jogo automaticamente.' }) }]);
+      return;
+    }
+    page.setTiles(list.map((p, i) => ({
+      key: 'p:' + p.key, x: Math.floor(i / 2) * (T + GAP), y: 64 + (i % 2) * (T + GAP), w: T, h: T,
+      sig: [p.key, p.minutes, p.seen, p.complete].join('~'),
+      render: () => h('div', { class: 'mt-wrapped' + (p.complete && !p.seen ? '' : ' calm') },
+        h('div', { class: 'mw-k' }, h('span', { class: 'wv-dot' }), p.period === 'year' ? 'o ano' : 'o mês'),
+        p.complete && !p.seen ? h('div', { class: 'mw-new', text: 'novo' }) : null,
+        h('div', { class: 'mw-t' }, p.label + (p.complete ? '' : ' · parcial'), h('div', { class: 'mw-sub', text: hm(p.minutes) + ' jogados' }))),
+      a: () => { sfx.select(); openWrapped(p.key); }, hints: [['a', 'Ver retrospectiva']],
+    })));
+  }
+  on('games', build); on('running', build); on('downloads', build); on('wrapped', build);
   setInterval(build, 60000); // "há X minutos"
   build();
   return page;

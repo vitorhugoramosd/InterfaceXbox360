@@ -7,7 +7,8 @@ const fs = require('fs');
 const out = path.resolve(process.argv[process.argv.length - 1]);
 fs.mkdirSync(out, { recursive: true });
 app.setName('blade-dash');
-app.setPath('userData', path.join(app.getPath('appData'), 'blade-dash'));
+// SMOKE_USERDATA: pasta de dados alternativa (ex.: cópia com sessões sintéticas) — não toca nos dados reais.
+app.setPath('userData', process.env.SMOKE_USERDATA || path.join(app.getPath('appData'), 'blade-dash'));
 
 const errors = [];
 app.on('browser-window-created', (_e, win) => {
@@ -41,6 +42,17 @@ async function run(win) {
   for (const n of names) { await key(win, 'E'); await wait(900); await shot(win, n); }
   await key(win, 'X');
   await shot(win, '9-opcoes');
+  if (process.env.SMOKE_WRAPPED_KEY) {
+    // abre o Gaming Wrapped e percorre os slides
+    await win.webContents.executeJavaScript(`import('./js/wrapped.js').then(m => m.openWrapped(${JSON.stringify(process.env.SMOKE_WRAPPED_KEY)}))`);
+    await wait(2500);
+    for (let i = 1; i <= 11; i++) {
+      await shot(win, 'w' + String(i).padStart(2, '0'));
+      await key(win, 'Right');
+      await wait(1800);
+    }
+    await key(win, 'Escape');
+  }
   if (process.env.SMOKE_EVAL) {
     console.log('eval:', await win.webContents.executeJavaScript(process.env.SMOKE_EVAL));
   }
