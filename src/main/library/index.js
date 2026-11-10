@@ -26,6 +26,8 @@ const { Launcher, openUri } = require('./launcher');
 const { SteamLib } = require('./steamlib');
 const { Storage } = require('./storage');
 const { Offers } = require('./offers');
+const { SessionLog } = require('./sessions');
+const wrapped = require('./wrapped');
 
 const scanners = {
   steam: require('./scanners/steam'),
@@ -55,6 +57,7 @@ let launcher = null;
 let steamLib = null;
 let storage = null;
 let offers = null;
+let sessions = null;
 let initPromise = null;
 let scanPromise = null;
 
@@ -245,7 +248,18 @@ lib.init = function init({ dataDir } = {}) {
         emitUninstalled();
       },
     });
-    launcher = new Launcher(store);
+    sessions = new SessionLog(store);
+    sessions.recover(); // sessões abertas na execução anterior: fecha no último "visto rodando"
+    sessions.on('updated', () => lib.emit('sessions-updated'));
+    launcher = new Launcher(store, {
+      sessions,
+      getRaws: () => store.data.cache,
+      nameOf: (id) => {
+        const r = findRaw(id);
+        const ov = store.override(id);
+        return (ov.customName && String(ov.customName).trim()) || (r && r.name) || id;
+      },
+    });
     launcher.on('game-state', (s) => lib.emit('game-state', s));
     storage = new Storage(store);
     steamLib = new SteamLib({ store, covers });
@@ -266,6 +280,7 @@ lib.init = function init({ dataDir } = {}) {
       await steamLib.init();
     } catch {}
     startDriveWatch();
+    launcher.start(); // monitor global de jogos rodando (sessões "detected")
   })();
   return initPromise;
 };
@@ -472,6 +487,53 @@ lib.openStore = async function openStore(target) {
     return { ok: false, error: 'Não foi possível abrir a loja.' };
   }
 };
+
+// ---------------- v3: Gaming Wrapped ----------------
+
+function artOf(id) {
+  const raw = findRaw(id);
+  if (!raw) return null;
+  const g = toGame(raw);
+  return { name: g.name, cover: g.cover, hero: g.hero, source: g.source };
+}
+
+lib.getWrappedPeriods = function getWrappedPeriods() {
+  return safe(async () => {
+    ensureInit();
+    return wrapped.periods(sessions.all(), store.data.wrappedSeen);
+  }, []);
+};
+
+lib.getWrapped = function getWrapped(key) {
+  return safe(
+    async () => {
+      ensureInit();
+      return wrapped.compute(sessions.all(), key, artOf);
+    },
+    { hasData: false, label: String(key || '') }
+  );
+};
+
+lib.markWrappedSeen = function markWrappedSeen(key) {
+  return safe(
+    async () => {
+      ensureInit();
+      const r = wrapped.rangeOf(key);
+      if (!r) return { ok: false, error: 'Período inválido.' };
+      if (!store.data.wrappedSeen.includes(r.key)) {
+        store.data.wrappedSeen.push(r.key);
+        await store.save();
+      }
+      return { ok: true };
+    },
+    { ok: false, error: 'Não foi possível salvar.' }
+  );
+};
+
+/** Para testes. */
+lib._sessions = () => sessions;
+lib._launcher = () => launcher;
+lib._store = () => store;
 
 /** Para testes: espera os downloads de capa pendentes. */
 lib._coversIdle = () => (covers ? covers.whenIdle() : Promise.resolve());

@@ -5,9 +5,7 @@ const { EventEmitter } = require('events');
 const path = require('path');
 const u = require('./util');
 
-const POLL_MS = 3000;
 const START_TIMEOUT_MS = 3 * 60 * 1000;
-const MISSES_TO_STOP = 2; // ~6s sem o processo = fechou (cobre troca launcher -> jogo)
 const MARK = '###BLADEDASH_END###';
 
 /** PowerShell persistente: uma consulta Win32_Process por poll (~100ms) sem abrir processo novo. */
@@ -29,6 +27,10 @@ class ProcWatcher {
       return false;
     }
     this.buf = '';
+    try {
+      this.proc.unref();
+      for (const st of [this.proc.stdin, this.proc.stdout]) if (st && st.unref) st.unref();
+    } catch {}
     this.proc.stdout.setEncoding('utf8');
     this.proc.stdout.on('data', (d) => {
       this.buf += d;
@@ -144,19 +146,86 @@ async function openUri(target) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Monitor de jogos (sempre ligado depois de start()):
+//  - 1 consulta Win32_Process (PowerShell persistente) a cada 20 s em repouso, 10 s com jogo
+//    rodando e 3 s enquanto espera um jogo aberto pelo dash aparecer (até 3 min).
+//  - Um processo conta se o executável está dentro da pasta de um jogo instalado e online
+//    (Steam: steamapps\common\<dir>; Xbox: pasta Content; etc.). Pastas que contêm o próprio
+//    cliente (Steam, Epic Launcher, Ubisoft Connect, EA app, raiz de disco...) são ignoradas.
+//  - Um jogo rodando = no máx. 1 sessão aberta (via "dash" se aberto pelo dash, senão "detected").
+//  - Se o intervalo entre checagens passar muito do esperado (PC suspenso), a sessão é fechada
+//    no último "visto" e outra começa agora — suspensão não conta como tempo jogado.
+const IDLE_MS = 20000;
+const RUNNING_MS = 10000;
+const PENDING_MS = 3000;
+const INDEX_TTL_MS = 60000;
+
+function launcherDirs() {
+  const pf = process.env.ProgramFiles || 'C:\\Program Files';
+  const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  const pd = process.env.ProgramData || 'C:\\ProgramData';
+  return [
+    path.join(pf86, 'Steam'),
+    path.join(pf, 'Steam'),
+    path.join(pf86, 'Epic Games', 'Launcher'),
+    path.join(pf, 'Epic Games', 'Launcher'),
+    path.join(pf86, 'Ubisoft', 'Ubisoft Game Launcher'),
+    path.join(pf, 'Electronic Arts', 'EA Desktop'),
+    path.join(pf, 'EA Games', 'EA Desktop'),
+    path.join(pf86, 'Origin'),
+    path.join(pd, 'Epic'),
+    process.env.SystemRoot || 'C:\\Windows',
+    pf,
+    pf86,
+    process.env.USERPROFILE,
+    process.env.LOCALAPPDATA,
+    process.env.APPDATA,
+  ]
+    .filter(Boolean)
+    .map(u.normPath);
+}
+
+/** Pasta serve para identificar um jogo? (não pode ser raiz de disco nem conter um launcher/pasta de sistema) */
+function usableGameDir(d, bad) {
+  if (!d || /^[a-z]:$/.test(d)) return false;
+  if (/\\windowsapps\\microsoft\.gamingapp/.test(d)) return false;
+  return !bad.some((b) => b === d || b.startsWith(d + '\\'));
+}
+
 class Launcher extends EventEmitter {
-  constructor(store) {
+  /**
+   * @param store Store
+   * @param opts { sessions: SessionLog, getRaws: () => raw[] (jogos instalados), nameOf: (id) => string }
+   */
+  constructor(store, opts = {}) {
     super();
     this.store = store;
-    this.tracked = new Map(); // id -> { dirs, launchedAt, detectedAt, lastTick, misses }
+    this.sessions = opts.sessions || null;
+    this.getRaws = opts.getRaws || (() => []);
+    this.nameOf = opts.nameOf || ((id) => id);
+    this.pending = new Map(); // id -> { dirs, launchedAt }  (aberto pelo dash, esperando aparecer)
+    this.running = new Map(); // id -> { via, lastTick, misses, interval }
     this.watcher = new ProcWatcher();
     this.timer = null;
     this.ticking = false;
+    this.started = false;
+    this._index = null;
+    this._indexAt = 0;
+    this._indexSrc = null;
+    this.badDirs = launcherDirs();
+    this.lastCheck = { at: 0, ms: 0, processes: 0, matched: 0 };
   }
 
   isRunning(id) {
-    const t = this.tracked.get(id);
-    return !!(t && t.detectedAt);
+    return this.running.has(id);
+  }
+
+  /** Liga o monitor global. */
+  start() {
+    if (this.started) return;
+    this.started = true;
+    this._schedule(2000);
   }
 
   async launch(raw) {
@@ -197,63 +266,136 @@ class Launcher extends EventEmitter {
   }
 
   _track(raw) {
-    const dirs = (raw.trackDirs && raw.trackDirs.length ? raw.trackDirs : []).map(u.normPath).filter(Boolean);
+    const dirs = this._dirsOf(raw);
     if (!dirs.length) return; // sem pasta conhecida: só registra lastPlayed
-    const cur = this.tracked.get(raw.id);
-    if (cur && cur.detectedAt) return; // já rodando
-    this.tracked.set(raw.id, { dirs, launchedAt: Date.now(), detectedAt: null, lastTick: 0, misses: 0 });
-    if (!this.timer) {
-      this.timer = setInterval(() => this._tick(), POLL_MS);
-      if (this.timer.unref) this.timer.unref();
+    if (this.running.has(raw.id)) return; // já rodando
+    this.pending.set(raw.id, { dirs, launchedAt: Date.now() });
+    this.started = true;
+    this._schedule(PENDING_MS);
+  }
+
+  _dirsOf(raw) {
+    const list = raw.trackDirs && raw.trackDirs.length ? raw.trackDirs : raw.installDir ? [raw.installDir] : [];
+    return list.map(u.normPath).filter((d) => usableGameDir(d, this.badDirs));
+  }
+
+  /** Índice [ { dir, id } ] ordenado do caminho mais longo para o mais curto. */
+  _getIndex() {
+    const raws = this.getRaws() || [];
+    if (this._index && this._indexSrc === raws && Date.now() - this._indexAt < INDEX_TTL_MS) return this._index;
+    const idx = [];
+    for (const r of raws) {
+      if (!r || !r.id || r.offline) continue;
+      for (const d of this._dirsOf(r)) idx.push({ dir: d, id: r.id });
     }
+    idx.sort((a, b) => b.dir.length - a.dir.length);
+    this._index = idx;
+    this._indexSrc = raws;
+    this._indexAt = Date.now();
+    return idx;
+  }
+
+  _schedule(ms) {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => this._tick(), ms);
+    if (this.timer.unref) this.timer.unref();
+  }
+
+  _nextInterval() {
+    if (this.pending.size) return PENDING_MS;
+    if (this.running.size) return RUNNING_MS;
+    return IDLE_MS;
   }
 
   async _tick() {
+    this.timer = null;
     if (this.ticking) return;
     this.ticking = true;
+    const t0 = Date.now();
     try {
       const list = await this.watcher.query();
       if (!list) return;
-      const paths = list.map((p) => p.toLowerCase());
       const now = Date.now();
-      for (const [id, t] of this.tracked) {
-        const running = paths.some((p) => t.dirs.some((d) => p.startsWith(d + '\\')));
-        if (running) {
-          t.misses = 0;
-          if (!t.detectedAt) {
-            t.detectedAt = now;
-            t.lastTick = now;
-            this.emit('game-state', { id, running: true });
-          } else {
-            const st = this.store.stat(id);
-            st.playtimeMinutes = (+st.playtimeMinutes || 0) + (now - t.lastTick) / 60000;
-            t.lastTick = now;
-            this.store.saveSoon();
+      const idx = this._getIndex();
+      const extra = [];
+      for (const [id, p] of this.pending) for (const d of p.dirs) extra.push({ dir: d, id });
+      const seen = new Set();
+      for (const raw of list) {
+        const p = raw.toLowerCase();
+        let hit = null;
+        for (const e of idx) {
+          if (p.startsWith(e.dir + '\\')) {
+            hit = e.id;
+            break;
           }
-        } else if (t.detectedAt) {
-          if (++t.misses >= MISSES_TO_STOP) {
-            this.tracked.delete(id);
-            this.store.save();
-            this.emit('game-state', { id, running: false });
-          }
-        } else if (now - t.launchedAt > START_TIMEOUT_MS) {
-          this.tracked.delete(id);
-          this.emit('game-state', { id, running: false });
         }
+        if (!hit) for (const e of extra) if (p.startsWith(e.dir + '\\')) { hit = e.id; break; }
+        if (hit) seen.add(hit);
       }
+      this.lastCheck = { at: now, ms: now - t0, processes: list.length, matched: seen.size };
+      this._apply(seen, now);
+    } catch {
+      // nunca derruba o monitor
     } finally {
       this.ticking = false;
-      if (!this.tracked.size && this.timer) {
-        clearInterval(this.timer);
-        this.timer = null;
-        this.watcher.stop();
+      if (this.started) this._schedule(this._nextInterval());
+    }
+  }
+
+  /** Aplica o resultado de uma checagem (separado para testes). */
+  _apply(seen, now) {
+    for (const id of seen) {
+      const r = this.running.get(id);
+      if (r) {
+        const delta = now - r.lastTick;
+        if (delta > r.interval * 2 + 15000) {
+          // checagens pararam (PC suspenso): não conta o buraco
+          if (this.sessions) {
+            this.sessions.close(id);
+            this.sessions.start(id, this.nameOf(id), r.via, now);
+          }
+        } else {
+          const st = this.store.stat(id);
+          st.playtimeMinutes = (+st.playtimeMinutes || 0) + delta / 60000;
+          st.lastPlayed = now;
+          if (this.sessions) this.sessions.seen(id, now);
+          this.store.saveSoon();
+        }
+        r.lastTick = now;
+        r.misses = 0;
+        r.interval = this._nextInterval();
+      } else {
+        const via = this.pending.has(id) ? 'dash' : 'detected';
+        this.pending.delete(id);
+        this.running.set(id, { via, lastTick: now, misses: 0, interval: this._nextInterval() });
+        const st = this.store.stat(id);
+        st.lastPlayed = now;
+        if (this.sessions) this.sessions.start(id, this.nameOf(id), via, now);
+        this.emit('game-state', { id, running: true });
+      }
+    }
+    for (const [id, r] of this.running) {
+      if (seen.has(id)) continue;
+      if (++r.misses >= 2) {
+        this.running.delete(id);
+        if (this.sessions) this.sessions.close(id);
+        this.store.save();
+        this.emit('game-state', { id, running: false });
+      }
+    }
+    for (const [id, p] of this.pending) {
+      if (!seen.has(id) && now - p.launchedAt > START_TIMEOUT_MS) {
+        this.pending.delete(id);
+        this.emit('game-state', { id, running: false });
       }
     }
   }
 
   dispose() {
-    if (this.timer) clearInterval(this.timer);
+    this.started = false;
+    if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    if (this.sessions) this.sessions.closeAll();
     this.watcher.stop();
   }
 }

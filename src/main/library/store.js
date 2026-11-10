@@ -19,6 +19,9 @@ function emptyData() {
     appNames: {}, // appid -> { name, type } vindos da API da loja (fallback do appinfo.vdf)
     sizes: {}, // id -> { bytes, at } tamanho de pasta calculado (cache 24h)
     offers: null, // último resultado de getOffers
+    sessions: [], // [{ gameId, name, start, end, via }] sessões fechadas (ms epoch)
+    openSessions: {}, // gameId -> { name, start, lastSeen, via } sessões em andamento
+    wrappedSeen: [], // chaves de Wrapped já vistas pelo usuário
   };
 }
 
@@ -52,6 +55,9 @@ class Store {
       d.appNames = raw.appNames && typeof raw.appNames === 'object' ? raw.appNames : {};
       d.sizes = raw.sizes && typeof raw.sizes === 'object' ? raw.sizes : {};
       d.offers = raw.offers && typeof raw.offers === 'object' ? raw.offers : null;
+      d.sessions = Array.isArray(raw.sessions) ? raw.sessions.filter((s) => s && s.gameId && s.end > s.start) : [];
+      d.openSessions = raw.openSessions && typeof raw.openSessions === 'object' ? raw.openSessions : {};
+      d.wrappedSeen = Array.isArray(raw.wrappedSeen) ? raw.wrappedSeen : [];
     }
     this.data = d;
     return d;

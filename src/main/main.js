@@ -104,6 +104,9 @@ function registerIpc() {
   ipcMain.handle('storage:get', () => lib.getStorage());
   ipcMain.handle('offers:get', (_e, force) => lib.getOffers({ force: !!force }));
   ipcMain.handle('store:open', (_e, target) => lib.openStore(target));
+  ipcMain.handle('wrapped:periods', () => lib.getWrappedPeriods());
+  ipcMain.handle('wrapped:get', (_e, key) => lib.getWrapped(key));
+  ipcMain.handle('wrapped:seen', (_e, key) => lib.markWrappedSeen(key));
   ipcMain.handle('settings:get', () => lib.getSettings());
   ipcMain.handle('settings:set', async (_e, patch) => {
     const s = await lib.setSettings(patch);
@@ -142,6 +145,7 @@ app.whenReady().then(async () => {
   lib.on('covers-updated', (games) => send('games-updated', games));
   lib.on('downloads', (list) => send('downloads', list));
   lib.on('uninstalled-updated', (list) => send('uninstalled-updated', list));
+  lib.on('sessions-updated', () => send('sessions-updated'));
 
   registerIpc();
   applyAutostart(lib.getSettings().autostart);

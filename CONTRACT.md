@@ -97,4 +97,39 @@ await lib.openStore(target)  // { ok, error? } — target: "steam:<appid>" | URL
 UI (`window.dash`): `getUninstalled() install(id) getDownloads() getStorage() getOffers(force) openStore(target)
 onDownloads(cb) onUninstalledUpdated(cb)`.
 
+## v3 — Gaming Wrapped (sessões de jogo + retrospectiva)
+
+Backend:
+
+```js
+// Sessões registradas em library.json: sessions: [{ gameId, name, start, end, via: "dash"|"detected" }]  (ms epoch)
+// - "dash": jogo aberto pelo Blade Dash; "detected": processo de um jogo conhecido visto rodando
+//   (aberto pela Steam/Epic/etc.) — monitor global sempre ligado, 1 checagem a cada ~20 s.
+// - sessões < 1 min descartadas; pausas < 3 min do mesmo jogo são unidas; sessão aberta é fechada
+//   com o último "visto rodando" se o app/PC fechar no meio (nunca conta tempo com o app fechado).
+await lib.getWrappedPeriods()  // [{ key: "2026-11"|"2026", period: "month"|"year", year, month?, label: "novembro de 2026"|"2026",
+                               //    minutes, complete: bool (período já acabou), seen: bool }]  (só períodos com dados; mais recente primeiro)
+await lib.getWrapped(key)      // Wrapped | { hasData: false, label }
+await lib.markWrappedSeen(key)
+// Evento 'sessions-updated' quando uma sessão é registrada/fechada.
+
+// Wrapped:
+{
+  key, period, label, from, to, complete, hasData: true,
+  totalMinutes, sessions, daysPlayed, gamesPlayed,
+  topGames: [{ id, name, cover, hero, source, minutes, sessions, share /*0..1*/ }],   // até 5
+  longestSession: { id, name, cover, hero, minutes, start, end },
+  favoriteHour: { hour /*0..23*/, minutes }, hourHistogram: [24 números, minutos],
+  favoriteWeekday: { day /*0=domingo*/, label: "sábado", minutes }, weekdayHistogram: [7],
+  longestStreakDays,             // maior sequência de dias seguidos jogando
+  busiestDay: { date /*ms início do dia*/, minutes },
+  lateNightMinutes,              // 0h–5h
+  newGames: [{ id, name, cover }],  // jogados pela 1ª vez no período
+  previous: { label, totalMinutes, deltaPct } | null,   // comparação com o período anterior
+  personality: { key, title, desc }  // ex.: "corujao", "maratonista", "fiel", "explorador", "fim-de-semana", "casual"
+}
+```
+
+UI (`window.dash`): `getWrappedPeriods() getWrapped(key) markWrappedSeen(key) onSessionsUpdated(cb)`.
+
 Quando `window.dash` não existe (abrir index.html no navegador), a UI usa um mock com jogos de exemplo.
